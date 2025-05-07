@@ -1,3 +1,14 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Editor & OS
+.vscode/
+.DS_Store
+
+# Logs and data
+data/
 __pycache__/
 .env
 *.log

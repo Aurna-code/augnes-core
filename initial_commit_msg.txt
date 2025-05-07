@@ -1,0 +1,8 @@
+
+Initial MVP Commit: Augnes Core v0.1
+
+- DOCFSM with extract → intent → self-regulate → executor
+- External YAML-based constraint regulation
+- MemoryEngine now saves feedback to disk (JSONL)
+- CLI input loop with !search support
+- Unit tested via pytest

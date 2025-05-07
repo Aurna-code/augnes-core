@@ -1,0 +1,18 @@
+
+# self_regulate 규칙 정의 파일 (v0.1)
+# 각 규칙은 intent_type 조건에 따라 활성화되며, goal_summary 내 특정 조건을 검사함
+
+blocked_due_to_security_risk:
+  applicable_intents: ["search_code"]
+  forbidden_keywords:
+    - "rm -rf"
+    - "import os"
+    - "sudo"
+
+truncate_goal_summary:
+  applicable_intents: ["general_query"]
+  max_length: 100
+
+empty_goal_blocked:
+  applicable_intents: ["search_code", "general_query"]
+  check_empty: true

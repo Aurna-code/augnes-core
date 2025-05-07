@@ -1,0 +1,6 @@
+memory:
+  backend: "mock"
+  feedback_store: "console"
+
+doc:
+  pipeline: "simple"
