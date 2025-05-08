@@ -1,18 +1,23 @@
-
 import yaml
 import os
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+from memory.jml import JMLManager
+from core.models.judgment import JudgmentMemoryEntry
+
 
 class DOCFSM:
     def __init__(self, memory, executor, config_path="configs/self_regulate_rules.yaml"):
         self.memory = memory
         self.executor = executor
         self.rules = self._load_regulation_rules(config_path)
+        self.jml = JMLManager(path="judgments.jsonl")
 
     def _load_regulation_rules(self, path):
         if not os.path.exists(path):
             print(f"⚠️  Regulation config not found at: {path}")
             return {}
-
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
@@ -26,9 +31,23 @@ class DOCFSM:
         goal_text = goal.get("goal_summary", "").lower()
 
         if any(k in goal_text for k in ["code", "function", "import", "rm -rf", "sudo", "os.", "def ", "script"]):
-            return {"intent_type": "search_code", "goal": goal}
+            intent_type = "search_code"
+        else:
+            intent_type = "general_query"
 
-        return {"intent_type": "general_query", "goal": goal}
+        strategy_hint = self.jml.recommend_strategy(
+            goal_summary=goal["goal_summary"],
+            intent_type=intent_type
+        )
+
+        intent = {
+            "intent_type": intent_type,
+            "goal": goal
+        }
+        if strategy_hint:
+            intent["strategy_hint"] = strategy_hint
+
+        return intent
 
     def _self_regulate(self, goal: dict, intent: dict) -> dict:
         constraints = []
@@ -67,6 +86,20 @@ class DOCFSM:
         }
         self.memory.store_feedback(feedback)
 
+        entry = JudgmentMemoryEntry(
+            task_id=datetime.now(timezone.utc).isoformat(),
+            goal_summary=goal["goal_summary"],
+            intent_type=intent["intent_type"],
+            strategy_hint=intent.get("strategy_hint"),
+            regulated=True,  # assumption: always storing post-intent
+            constraints=[],
+            executor_result=None,
+            reward=None,
+            feedback_text=None,
+            timestamp=datetime.now(timezone.utc).isoformat()
+        )
+        self.jml.save(entry)
+
     def process(self, user_input: str) -> dict:
         print(f"📥 Input Received: {user_input}")
 
@@ -78,7 +111,6 @@ class DOCFSM:
 
         regulation = self._self_regulate(goal, intent)
 
-        # 차단 여부와 관계없이 저장
         self._store_feedback(goal, intent)
 
         if not regulation["regulated"]:
@@ -96,4 +128,13 @@ class DOCFSM:
             "intent": intent,
             "regulated": True,
             "response": response,
+        }
+
+    def _extract_domain_from_goal(self, goal: dict) -> str:
+        return goal.get("domain", "general")
+
+    def _extract_context_features(self, goal: dict) -> Dict[str, float]:
+        return {
+            "symbolic_depth": 0.0,
+            "sequence_length": 0.0
         }

@@ -1,29 +1,36 @@
 from core.doc_fsm import DOCFSM
-from memory.rag import MemoryEngine
+from memory.jml import JMLManager
+from datetime import datetime, timezone
+
+# 더미 메모리와 실행기
+class DummyMemory:
+    def store_feedback(self, feedback):
+        print("📝 Feedback stored:", feedback)
 
 class DummyExecutor:
-    def act(self, action_dict):
-        print("⚙️ Executor Executing:", action_dict)
-        return f"Executed intent '{action_dict['intent_type']}'"
+    def act(self, intent):
+        return {
+            "message": f"📌 Executed intent with strategy: {intent.get('strategy_hint', 'default')}"
+        }
 
 if __name__ == "__main__":
-    memory = MemoryEngine()
-    fsm = DOCFSM(memory=memory, executor=DummyExecutor())
+    fsm = DOCFSM(memory=DummyMemory(), executor=DummyExecutor())
+    print("📂 JML PATH:", fsm.jml.path)
+    print("🔄 Augnes Judgment System (CLI Ready)")
+
+    # (선택) Preload 삭제 or 보완 주석 처리
+    # from memory.jml import JudgmentMemoryEntry, StrategyResult
+    # preload_entry = ...
+    # fsm.jml.save(preload_entry)
 
     while True:
-        user_input = input("\n👤 You (or !search <keyword>): ")
+        try:
+            user_input = input("\n💬 Input your task: ")
+            if user_input.strip().lower() in ["exit", "quit"]:
+                break
 
-        # 검색 명령
-        if user_input.startswith("!search "):
-            query = user_input.replace("!search ", "")
-            results = memory.retrieve(query)
-            print(f"🔍 Retrieved {len(results)} results:")
-            for r in results:
-                print("•", r.get("goal", {}).get("goal_summary", "N/A"))
-            continue
-
-        if user_input.lower() in ["exit", "quit"]:
-            break
-
-        result = fsm.process(user_input)
-        print("📤 Output:", result)
+            result = fsm.process(user_input)
+            print("🎯 Final Response:", result["response"]["message"])
+            print("📌 Intent Info:", result["intent"])
+        except Exception as e:
+            print("❌ Error:", e)

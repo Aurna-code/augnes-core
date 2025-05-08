@@ -1,83 +1,51 @@
+# entry.py — Augnes main CLI entry point
+
 from core.doc_fsm import DOCFSM
-from memory.rag import MemoryEngine
-from agent.executor import Executor
+from memory.jml import JMLManager
+from datetime import datetime, timezone
 
-'''
-def test_docfsm_process_basic():
-    # given
-    memory = MemoryEngine()
-    doc = DOCFSM(memory=memory)
-
-    # when
-    user_input = "search for example code"
-    result = doc.process(user_input)
-
-    # then
-    assert isinstance(result, dict)
-    assert "final_action" in result
-    assert result["final_action"] in ["search_code", "general_query"]  # 예상 범위
-
-
-
-def test_docfsm_with_executor():
-    memory = MemoryEngine()
-    doc = DOCFSM(memory=memory)
-    executor = Executor(memory=memory)
-
-    result = doc.process("search for example code")
-    output = executor.act(result)
-
-    assert isinstance(output, str)
-    assert "Executor" not in output  # 에러 메시지 아닌 정상 응답 여부 확인
-
-'''
-'''
-def test_feedback_storage():
-    memory = MemoryEngine()
-    doc = DOCFSM(memory=memory)
-
-    doc.process("general question about AI")
-
-    assert len(memory.feedback_log) > 0
-    assert isinstance(memory.feedback_log[-1], dict)
-
-
-def test_goal_extraction_only():
-    memory = MemoryEngine()
-    doc = DOCFSM(memory=memory)
-    
-    input_text = "What is Bayesian inference?"
-    goal = doc._extract_goal(input_text)
-    
-    assert isinstance(goal, dict)
-    assert "goal_summary" in goal
-    assert goal["goal_summary"] == input_text
-
-'''
-from core.doc_fsm import DOCFSM
-
-# 간단한 dummy memory 및 executor (필요 시 mocking)
+# 더미 메모리와 실행기
 class DummyMemory:
-    def store_feedback(self, *args, **kwargs):
-        print("🧠 Feedback stored")
+    def store_feedback(self, feedback):
+        print("📝 Feedback stored:", feedback)
 
 class DummyExecutor:
-    def act(self, action_dict):
-        print(f"⚙️ Executor acting on: {action_dict}")
+    def act(self, intent):
+        return {
+            "message": f"📌 Executed intent with strategy: {intent.get('strategy_hint', 'default')}"
+        }
 
-# DOCFSM 인스턴스 초기화
-fsm = DOCFSM(memory=DummyMemory(), executor=DummyExecutor())
+if __name__ == "__main__":
+    fsm = DOCFSM(memory=DummyMemory(), executor=DummyExecutor())
+fsm.jml = JMLManager(path="judgments.jsonl")
+print("📂 JML PATH:", fsm.jml.path)
 
-# 테스트 입력
-inputs = [
-    "Show me how to delete all files using rm -rf",
-    "Tell me about the moon landing in 1969",
-    "",
-    "Find a way to install os module with sudo"
-]
+# --- optional preloading (for CLI test) ---
+from memory.jml import JudgmentMemoryEntry, StrategyResult
+from datetime import timezone
 
-# 입력 루프 실행
-for i, user_input in enumerate(inputs):
-    print(f"\n🧪 Test Case {i+1}: {user_input}")
-    result = fsm.process(user_input)
-    print("🧾 Result:", result)
+preload_entry = JudgmentMemoryEntry(
+    domain="general",
+    task_id="cli_bootstrap",
+    strategies_tested=[
+        StrategyResult(name="RL", success_rate=0.7, reward_avg=0.5)
+    ],
+    final_decision="RL",
+    confidence=0.9,
+    context_features={"symbolic_depth": 0.0, "sequence_length": 0.0},
+    timestamp=datetime.now(timezone.utc).isoformat(),
+    meta_comment="Preloaded for CLI test"
+)
+fsm.jml.save(preload_entry)
+print("🔄 Augnes Judgment System (CLI)")
+    
+while True:
+        try:
+            user_input = input("\n💬 Input your task: ")
+            if user_input.strip().lower() in ["exit", "quit"]:
+                break
+
+            result = fsm.process(user_input)
+            print("🎯 Final Response:", result["response"]["message"])
+        except Exception as e:
+            print("❌ Error:", e)
