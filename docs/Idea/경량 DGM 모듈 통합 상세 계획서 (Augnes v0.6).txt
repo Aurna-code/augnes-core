@@ -1,0 +1,119 @@
+경량 DGM 모듈 통합 상세 계획서 (Augnes v0.6)
+1. 개요
+
+    목표: DGM의 오픈-엔디드 진화 사이클(Variation·Evaluation·Selection·Archive) 핵심 루프를 Augnes v0.6 정책-진화 파이프라인에 경량 모듈로 이식
+
+    기대 효과:
+
+        자가-개선 속도 및 품질 10–20%p 향상
+
+        전략 다양성 확보 및 안정적 성장
+
+        잘못된 변형 누적 방지로 신뢰성 강화
+
+2. 현재 Augnes v0.6 파이프라인 핵심 구성
+계층	주요 모듈·파일	역할
+Decision	memory/jml.py	HotCache 기반 추천, stats-weighted 정렬
+	memory/hotcache.py	실시간 활성 전략 캐시
+Reflection	tools/review_recent_judgments.py	저보상·논리실패 자동 감지 → penalty/mutation 트리거
+Mutation	tools/strategy_mutation.py	차단된 전략 자동 변형 → 신규 등록 → 추천 큐 재투입
+Stats	tools/eval_strategy_stats.py	reward/use/fail/advantage 집계 → strategy_stats.json
+Storage	data/judgments.jsonl
+data/strategy_stats.json
+data/deferred_strategies.jsonl	모든 판단·통계·차단 큐 기록
+3. 경량 DGM 모듈 설계 원칙
+
+    Variation (변형)
+
+        PoC 수준에서 프롬프트 기반 mutation을 기존 strategy_mutation.py에 추가
+
+        다수 변형 생성 → MAP-Elites 형태로 niche별 대표 유지
+
+        구현:
+
+# tools/strategy_mutation.py 확장 예시
+from prompt_lib import generate_mutations
+patches = generate_mutations(base_code, prompts=["optimize I/O", "reduce memory"])
+
+근거: 전략 자동 변형 루프 이미 MVP 완성
+
+Evaluation (평가)
+
+    tools/run_benchmarks.py 신규 도입
+
+    SWE-bench mini, unit-tests 자동 실행 → benchmark_score 반환
+
+    CI 통합: GitHub Actions/Jenkins에서 반복 실행
+
+    통계 집계: strategy_stats.json에 benchmark_score·delta_score 추가 
+
+Selection (선택)
+
+    memory/jml.py 및 Meta-Judgment Controller 확장
+
+    기존 가중치 mean_reward + 0.5*avg_advantage에 0.2*delta_score 추가
+
+    JMLManager.recommend_strategy() 로직 수정:
+
+score = 0.5*mean_reward + 0.3*avg_advantage + 0.2*delta_score
+
+근거: stats-weighted 추천 구조
+
+Archive (계보)
+
+    data/judgments.jsonl 엔트리에 parent_id, mutation_id, benchmark_score 필드 추가
+
+    tools/visualize_lineage.py 개발: NetworkX 기반 변형 히스토리 시각화
+
+    근거: 기존 judgments.jsonl schema 
+
+4. 구현 로드맵
+단계	산출물 및 작업	기간
+1	벤치마크 래퍼
+tools/run_benchmarks.py 작성
+strategy_stats.json 스키마 확장	1주차
+2	Selection 로직 보강
+memory/jml.py 점수 계산식 수정	1–2주차
+3	Archive 확장
+judgments.jsonl schema 보강
+visualize_lineage.py 작성	2주차
+4	Variation 다양화
+5종 프롬프트 템플릿 추가 (성능·안정·속도)	2–3주차
+5	샌드박스 통합
+executor.py에 Docker seccomp + 네트워크 차단 기본화	3주차
+6	통합 테스트 및 CI/CD
+GitHub Actions/Jenkins 파이프라인 구성	3–4주차
+7	모니터링 대시보드
+Grafana + Prometheus 연동	4주차
+5. 위험 관리 및 완화책
+위험 요소	설명	완화책
+연산 비용 과다	벤치마크 반복 실행으로 GPU-시간 급증	4-bit 양자화 이용
+벤치마크 샘플 축소
+조기 종료
+무한 루프	실패 변형 지속 생성	실패 변형 캐싱
+cool-down 타이머 적용
+보안 위험	LLM 생성 코드 실행 시 권한 상승 가능	Docker seccomp + --network=none 기본화
+과적합	SWE-bench 편중 → 실제 업무 케이스 대응 저하	다중 벤치마크 교차 평가 (Polyglot, DocRepair 등)
+6. 검증 및 모니터링
+
+    정량 지표:
+
+        mean_reward, avg_advantage, benchmark_delta
+
+        정책 개선률(전/후 성능 비교)
+
+    품질 지표:
+
+        코드 커버리지
+
+        버그 감소율
+
+    모니터링:
+
+        Grafana 대시보드 (모듈별 실행 시간·성능 지표)
+
+        ELK 스택 로그 분석 (실패 변형, 선택 내역)
+
+7. 결론 및 제언
+
+이 뼈대(plan)를 기반으로 PoC를 신속히 수행하면, Augnes v0.6은 DGM의 핵심 루프를 경량 모듈로 흡수하여 자가-개선 능력을 크게 강화할 수 있습니다. 특히 벤치마크 기반 선택 압력 추가로 전략 품질과 신뢰성을 동시에 높이세요. PoC 이후 실제 워크로드에서 성능·안정성 결과를 검증하고, v0.7 로드맵에 반영하시기 바랍니다.

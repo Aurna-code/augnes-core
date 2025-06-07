@@ -1,0 +1,135 @@
+## Engram 기반 장기 메모리 및 자아 인식/강화 모듈 통합 계획
+
+### 서론
+
+Augnes v0.6 파이프라인에 동적 엔그램(Engram) 기반 장기 메모리(LTM) 및 자아(self-state) 모델링을 도입하기 위한 구체적인 통합 방안을 정리합니다. 이 문서는 다음 세 가지 목적을 가집니다:
+
+1. 기존 분석 결과(Self-Audit) 검증
+2. 주요 리스크 및 완화 전략 제시
+3. 단계별 통합 로드맵 및 MVP 완료 기준 정의
+
+---
+
+## 1. Self-Audit: 기존 분석 검증
+
+| 체크 포인트                    | 코드베이스 근거                            | 검증 결과 |
+| ------------------------- | ----------------------------------- | ----- |
+| LTM/RAG 모듈이 dummy 상태      | `memory/rag.py` 파일 내 주석 및 빈 함수      | ✔ 유효  |
+| 단기 기억만 HotCache/JML 기반 구현 | `memory/jml.py` 참조(HotCacheManager) | ✔ 유효  |
+| judgments.log 급증 및 롤오버 필요 | `logs/judgments.jsonl` 무한 성장 징후     | ✔ 유효  |
+| 장기 자아 모델링 모듈 미구현          | 아키텍처 TODO 목록: LTM/RAG 확장 필요         | ✔ 유효  |
+
+※ 기존 로드맵 및 전제에는 오류가 없으며, 엔그램 기반 LTM·자아 모듈은 완전 신규 기능으로서 통합이 타당합니다.
+
+---
+
+## 2. 핵심 리스크 및 완화 전략
+
+아래 표는 식별된 주요 리스크와 각 리스크를 완화하기 위한 구체적 방안을 정리한 것입니다.
+
+| 리스크        | 구체적 문제                            | 완화/통합 방안                                                                              |
+| ---------- | --------------------------------- | ------------------------------------------------------------------------------------- |
+| 시스템 복잡도 증가 | 여러 파일·모듈 추가로 코드베이스 증가, 의존성 관리 어려움 | - `memory/engrams/` 폴더 내 `capture.py`, `store.py`, `retrieve.py`, `prune.py` 등 모듈별 분리 |
+
+* 런타임 환경변수(`ENGRAM_POC`)로 기능 토글                                     |
+  \| 추론 지연(latency)       | 활성화 캡처 및 kNN 검색이 실시간 수행되며 응답 속도 저하 가능         | - 활성화 캡처는 비동기(`asyncio`)로 처리하여 응답 경로와 분리
+* Retrieval은 HotCache 히트 실패 시에만 호출                                            |
+  \| 저장소 폭증              | 엔그램 벡터 및 메타데이터가 축적되어 스토리지 용량 급증               | - 기존 `R³Mem` 압축 기법 재사용
+* TTL(Time-To-Live) 및 중요도 점수 기준(0.4·freq+0.4·reward+0.2·recency) 하위 항목 요약/삭제         |
+  \| 프라이버시·보안          | 민감 대화 내용이 장기 저장소에 남아 GDPR/내부 정책 위험               | - AES-GCM row-level 암호화, 키는 OS KMS에 보관
+* 원본 컨텍스트는 일정 기간 후 폐기, 요약문만 보관                                  |
+  \| Stability vs Plasticity  | 과거 패턴에 과적합 또는 과도한 망각으로 연속성·적응성 균형 상실       | - 중요도 스코어에 온도 매개변수(`softmax(T)`) 적용, 시간 경과에 따라 T 증가
+* Ebbinghaus 망각 곡선 기반 학습률 조정                                   |
+  \| 운영 가시성 부재         | 어떤 엔그램이 선택·강화되었는지 추적 어려워 디버깅 및 FAQ 대응 곤란     | - Streamlit 기반 `Engram Lens` 대시보드 구현
+* Neo4j Bloom 또는 Mermaid Diagram으로 노드/간선 시각화                           |
+
+---
+
+## 3. 통합 로드맵 (4단계)
+
+### Phase 1: Activation Capture & Store (1주)
+
+1. **위치**: `memory/engrams/capture.py`
+2. **작업**: `executor.py` 호출 시 `HookManager.enable()` 체크
+3. **세부**:
+
+   * 지정된 레이어에 `register_forward_hook` 등록
+   * 캡처된 활성화 벡터는 비동기 태스크로 FAISS(개발)/Milvus(운영) + SQLite/Postgres 메타 DB에 저장
+
+### Phase 2: Retrieval & Prompt Augmentation (1주)
+
+1. **위치**: `memory/engrams/retrieve.py`, `core/doc_fsm.py`
+2. **작업**:
+
+   * `get_similar()` 함수로 현재 입력 임베딩 검색
+   * `prepare_context()` 직전, 시스템 메시지 형태로 요약된 엔그램 주입
+   * 토큰 과부하 시 `importance` 하위 엔그램부터 제외
+
+### Phase 3: Reinforcement & Pruning (2주)
+
+1. **Reinforcement**:
+
+   * 사용자 피드백 수집 후 EMA(`α=0.1`)로 `feedback_score` 업데이트
+   * 주기적 LoRA/파인튜닝으로 상위 엔그램 강화
+2. **Pruning**:
+
+   * 매일 03:00 KST, 중요도 하위 15% 및 30일 경과 엔그램 삭제
+   * 삭제된 엔그램은 스냅샷과 별도 테이블에 보관(rollback 용)
+
+### Phase 4: Snapshot/Rollback & Ops (2–3주)
+
+1. **Snapshot**:
+
+   * 주 1회 `engrams/snap_YYYYMMDD.pkl` 생성
+2. **Rollback CLI**:
+
+   * `scripts/restore_snapshot.py --date YYYYMMDD` 명령 제공
+3. **Privacy & Dashboard**:
+
+   * 컨텍스트 요약만 대시보드 노출, 민감 데이터 암호화
+   * Streamlit `Engram Lens` 대시보드로 노드·간선·메타데이터 시각화
+
+---
+
+## 4. MVP 완료 기준 (Done Definition)
+
+| 항목       | 측정 지표                                         |
+| -------- | --------------------------------------------- |
+| 연속성 체감   | 반복 질문 시 BLEU/semantic-sim ≥ 0.8 (기준 대비 +10pt) |
+| 응답 지연    | Phase 2까지 평균 응답 지연 Δ < 80ms                   |
+| 저장소 관리   | 30일간 엔그램 DB 증가 ≤ 1GB                          |
+| 프라이버시 준수 | PII 필드 암호화 100%, 주간 접근 로그 감사                  |
+| 디버깅 가시성  | `Engram Lens` 노드 클릭 ↔ 메타 노출 < 300ms           |
+
+---
+
+## 5. 코드 통합 스포트라이트
+
+```diff
++ from memory.engrams.capture import with_activation_capture
+  def execute_prompt(prompt):
+-     return model.generate(prompt)
++     with_activation_capture(model) as cap:
++         reply = model.generate(prompt)
++     engr.store(cap.vector, meta={'prompt': prompt})
++     return reply
+```
+
+```diff
+  def prepare_context(goal_summary):
+      base_prompt = compose_base(goal_summary)
++     if os.getenv("ENGRAM_POC"):
++         sim_ctx = engr.retrieve(model.embed(goal_summary))
++         base_prompt = "\n".join(sim_ctx) + base_prompt
+      return base_prompt
+```
+
+---
+
+## 결론 및 다음 단계
+
+1. **타당성 확인**: 기존 코드베이스 분석 결과와 일치하며, 신규 모듈 통합 필요성 확정
+2. **리스크 완화**: 모듈 분리·비동기화·압축·암호화·온도조절·대시보드로 대응
+3. **실행 전략**: 4단계 로드맵을 6–7주 내 완료, v0.7\~v1.0 버전에서 순차 도입
+
+이 문서를 바탕으로 Augnes에 동적 엔그램 기반 장기 메모리 및 자아 강화 모듈을 안전하고 효율적으로 통합할 수 있습니다.
