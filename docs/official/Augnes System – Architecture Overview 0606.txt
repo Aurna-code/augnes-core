@@ -1,0 +1,102 @@
+Augnes System – Architecture Overview (v0.6 → 2025-06-06 최신)
+
+────────────────────────────────────────
+Layer Stack
+────────────────────────────────────────
+Emotion Layer
+• ExternalEmotionField
+• StrategicEmotionController → mid‑term reasoning 신호 (구현 대기)
+
+Strategic Layer
+• StrategicReasoner (SR)
+• BayesianVerifier (BV)
+• JDS Loop – antinomic / contradiction finder
+• 정책 추천/배제/변형 자동화: HotCache+stats 기반 큐 지원(Advantage 반영)✅
+
+Decision Layer
+• Goal extraction
+• Intent framing  ← JML.recommend_strategy() (Advantage+FailCount 반영)✅
+• Clarify Probe 분기 (english probe_templates)✅
+• Self‑Regulation (constraint & security filter)
+• Feedback node → reward + advantage + constraints 저장
+• 실패 전략 penalty/차단 자동화 (MetaJudgmentController)✅
+
+Execution Layer
+• Executor → returns { message, reward, advantage, proof_obj, meta_comment }
+• ISS Store – immediate state snapshots
+• JML (Storage + Recommendation + HotCacheManager 연동)✅
+• LTM / RAG (vector/disk retrieval; dummy)
+• 실행 결과 judgment, reward, advantage, feedback 실시간 기록 (judgments.jsonl)✅
+
+Meta Layer
+• Meta‑Judgment Controller  ★ ACTIVE
+– mean_reward/fail_count/avg_advantage 기반 자동 차단/Deferred Queue 연동✅
+– intent→ask, penalty 큐 자동 기록
+• Self‑Tuning Evaluator
+– judgments.jsonl → strategy_stats.json(auto 집계: mean_reward/use_count/fail_count/avg_advantage)✅
+• Deduplication (goal_summary+strategy+semantic similarity)
+– RapidFuzz, file-lock + multiprocess 안정화✅
+• Policy Recommendation/Exclusion/Mutation Loop 완성✅
+• RIL (Reward‑Inference Loop) planned
+
+Reflection Layer
+• Deferred Strategy Queue (자동화)✅
+– data/deferred_strategies.jsonl
+– 차단된 전략/실패 정책 누적
+• Reflection/Review Loop (자동화)✅
+– tools/review_recent_judgments.py: 저보상/논리실패/미증명 자동 감지/로그
+– Penalty + stats 업데이트 + Trigger mutation
+• Mutation/Revival Loop (신규)✅
+– penalty 전략 자동 변형(strategy_mutation.py), 신규 전략 stats 등록, 추천 queue 자동화
+• Revival/복구 Loop (planned)✅
+– 차단된 전략의 재활용/개선 (기초 구조 완료, 고도화 예정)
+
+────────────────────────────────────────
+Primary Data Flows
+────────────────────────────────────────
+
+UserInput → Goal → Intent
+
+Intent —(strategy_hint, advantage예측)→ Executor (prove / search_code / general_query / clarify)
+
+Executor → Feedback { message, reward, advantage, proof_obj, meta_comment }
+
+Feedback → ISS → JML (append JudgmentMemoryEntry + advantage)✅
+
+Self‑Tuning Evaluator ⟵ JML (batch: judgments.jsonl → strategy_stats.json)✅
+
+strategy_stats.json ⟶ HotCacheManager → JMLManager (weighting: mean_reward + 0.5*avg_advantage)✅
+
+Meta‑Judgment Controller ⟵ strategy_stats (fail_count, avg_advantage 기준 block)✅
+
+Meta BLOCK ⇒ intent→ask + deferred_strategies.jsonl✅
+
+Reflection loop ⟵ recent judgments (MVP: penalty+stats+mutation 연동)✅
+
+Mutation loop → 신규 전략 mutation_origin 포함 stats 등록 → 추천 queue 자동 추가✅
+
+Revival loop (planned) ⟵ deferred queue (차단 전략 복구/진화)✅
+
+추천 결과 및 후보/점수 logs/strategy_recommend_log.jsonl 자동 기록✅
+
+────────────────────────────────────────
+Key Persistence Artifacts
+────────────────────────────────────────
+• judgments.jsonl            — every judgment (실시간 기록: goal_summary, strategy_hint, reward, advantage, logic_pass, proof_obj, meta_comment, timestamp)
+• strategy_stats.json        — mean_reward, use_count, fail_count, avg_advantage, last_updated (auto 집계)✅
+• deferred_strategies.jsonl  — blocked strategy queue (자동 penalty/mutation 기록)✅
+• logs/reflection_log.jsonl  — reflection/auto-review 기록 (저보상/논리실패/미증명)✅
+• logs/strategy_recommend_log.jsonl — 추천 전략 이력 (timestamp, strategy, score, candidates)✅
+• hotcache_snapshot.json     — (optional) HotCacheManager 현재 노드 상태
+
+────────────────────────────────────────
+Current Weak Links / TODO (2025-06-06 기준)
+────────────────────────────────────────
+□ LTM / RAG 여전히 dummy (long-term context 미구현)✅
+□ judgments.jsonl rotation 자동화 필요✅
+□ reward engine의 policy alignment & dynamic tuning 필요✅
+□ mutation 다양성/자동화, 복구/혁신 전략 실험 강화✅
+□ policy RL/Reward-Inference Loop(RIL) 본격 도입 필요✅
+□ 실전 LLM executor 연동 (추천 queue 기반 자동화)✅
+□ 시각화/정책 진화 분석 자동화 (로그 대시보드)✅
+□ HotCache 메모리 최적화, 대용량 scaling 테스트✅

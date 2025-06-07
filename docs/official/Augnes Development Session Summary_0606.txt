@@ -1,0 +1,110 @@
+Augnes Development Session Summary – 2025-06-06 (업데이트)
+
+1 · Key Accomplishments (최신 기준)
+
+| Area                           | Completed Work                               |
+| ------------------------------ | -------------------------------------------- |
+| Judgment → Proof → Record loop | • action: prove end-to-end (Lean/Z3 stub 연동) |
+
+```
+                                    | • exec_proof() + Executor 통합 → logic_pass, proof_obj, reward, advantage 기록
+                                    | • judgments.jsonl 기록 자동화 (advantage 포함)
+```
+
+Reflection & Auto-Penalty Loop          | • tools/review\_recent\_judgments.py 확대
+\|   – reward < threshold, logic\_pass, 미증명 자동 감지
+\|   – logs/reflection\_log.jsonl 저장, deferred\_strategies.jsonl 자동화
+\|   – 중복 penalty 방지, fail\_count 증가, last\_blocked 기록
+
+Clarify Probe & FSM 통합                | • tools/probe\_templates.py: 영어 질문 템플릿 작성
+\| • core/doc\_fsm.py: should\_probe 로직 도입 (정보 부족/쿨다운)
+\|   – finalize "clarify" action, cooldown 내 fallback "ask"
+
+Advantage Logging & Stats 연동           | • Executor → reward, advantage 반환
+\| • datamodels/judgment.py: advantage 필드 추가
+\| • eval\_strategy\_stats.py 확장: sum\_advantage, count\_advantage 누적 → avg\_advantage 집계
+\| • data/strategy\_stats.json 에 avg\_advantage 반영
+
+HotCacheManager 기반 추천 시스템 구축   | • memory/hotcache.py: HotCacheManager 구현 (stats+deferred 연동)
+\| • memory/jml.py: HotCache 우선 추천, mean\_reward + 0.5\*avg\_advantage 기준 정렬
+\|   – recommend\_strategy → \_log\_recommendation 호출, logs/strategy\_recommend\_log.jsonl 자동 기록
+
+Policy Recommendation & Exclusion        | • tools/strategy\_recommend.py: 자동 추천/배제 리스트 생성
+\| • fail\_count, mean\_reward, avg\_advantage 기반 정책 추천/차단 로직 완성
+
+Mutation/Improvement Loop               | • tools/strategy\_mutation.py: 차단된 전략 자동 변형 → mutation\_origin 포함 신규 등록
+\| • 신규 전략 stats 등록 & 추천 queue 자동 재투입
+\| • "실패→변형→재실험→진화" 루프 완성
+
+Deduplication & Async Lock               | • memory/jml.py: semantic dedup (RapidFuzz), file-lock으로 multiproc 안전화
+\| • tests/test\_jml.py, tests/test\_jml\_multiproc.py: dedup/락 테스트 통과
+
+Tests                                   | • tests/test\_executor\_prove.py: stub proof → Executor → feedback → reflection loop 전체 테스트
+\| • tests/test\_jml\_multiproc.py: 멀티프로세스 dedup, 파일락 테스트
+
+────────────────────────────────────────
+2 · Current Plan Position (Execution Plan rev2 기준)
+
+P-1 ✅  P-2 ✅  P-3a ✅  P-3b ✅  P-3c ✅  P-3d ✅  P-4 ✅
+S-1 ✅  S-2 ⏳  S-3 ⏳ …
+
+* P-4: 코드 완성 (성능/유사도 임계치 미세조정 완료)
+* S-1: Simulation Stub(Lean/Z3) → 완료, Advantage Logging → 완료, HotCache → 완료, Clarify Probe → 완료
+* 정책 진화 파이프라인(추천→배제→변형→로그) 완전 자동화 MVP 달성
+
+────────────────────────────────────────
+3 · File/Module Updates (핵심)
+
+* core/doc\_fsm.py                            | Clarify Probe 로직, feedback에 advantage 전달, intent 분기 강화
+* core/models/judgment.py                     | advantage 필드 추가, Pydantic 모델 확장
+* agent/executor.py                           | exec\_proof 연동, prove/search\_code/general\_query/advantage 반환
+* memory/hotcache.py                          | HotCacheManager 구현 (stats + deferred 연동)
+* memory/jml.py                               | HotCache 기반 추천, stats-weighted 추천(advantage 반영), dedup, file-lock, recommend 로그
+* memory/rag.py                               | (dummy) RAG store
+* tools/probe\_templates.py                    | 영어 Clarify 질문 템플릿 및 generate\_probe 함수
+* tools/review\_recent\_judgments.py            | reflection/penalty 자동화, stats/penalty/중복 방지, mutation 트리거
+* tools/eval\_strategy\_stats.py                | avg\_advantage 집계, fail\_count, last\_blocked 등 통계 확장
+* tools/strategy\_recommend.py                 | 추천/배제 리스트 자동화, stats 기반 필터링
+* tools/strategy\_mutation.py                  | penalty 전략 자동 변형, mutation\_origin 등록, 추천 queue 재투입
+* tests/test\_executor\_prove.py                 | 판정 루프 단위 테스트 (stub proof→Executor→feedback→reflection)
+* tests/test\_jml.py, tests/test\_jml\_multiproc.py | dedup/락 테스트
+* data/judgments.jsonl                         | v1 로그 (goal\_summary, strategy\_hint, reward, advantage, logic\_pass, proof\_obj, meta\_comment)
+* data/strategy\_stats.json                       | mean\_reward, use\_count, fail\_count, avg\_advantage, last\_updated
+* data/deferred\_strategies.jsonl                | penalty 큐 (자동 기록)
+* logs/reflection\_log.jsonl                     | reflection 결과 기록
+* logs/strategy\_recommend\_log.jsonl            | 추천 이력 자동 기록
+
+────────────────────────────────────────
+4 · Open Tasks for Next Session
+
+1. LLM/실행기와 추천 queue 연동 – 실제 자동 판단/추천/실험 루프 구현
+2. Mutation 전략 실전 queue/실행 통합 및 평가 지표 수집
+3. 정책 진화 구조의 시각화/통계 분석 자동화 (대시보드 설계)
+4. PolicyNet(RL/Policy/Reward/Advantage) 모델 통합 및 실험
+5. CI/통합테스트, 실행 파이프라인 안정화
+6. Storage rollover (SQLite, LTM/RAG 확장, judgments.jsonl rotatation)
+
+────────────────────────────────────────
+5 · Quick Commands Cheat-sheet (최신)
+
+판단 reflection 루프
+python3 tools/review\_recent\_judgments.py
+
+추천/배제 리스트 확인
+python3 tools/strategy\_recommend.py
+
+배제 전략 mutation/변형 신규 등록
+python3 tools/strategy\_mutation.py
+
+Clarify Probe FSM 테스트
+python3 core/doc\_fsm.py
+
+stub proof 판단 전체 루프 테스트
+PYTHONPATH=. python3 tests/test\_executor\_prove.py
+
+dedup multi-proc stress-test
+PYTHONPATH=. python3 tests/test\_jml\_multiproc.py
+
+────────────────────────────────────────
+
+

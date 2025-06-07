@@ -1,0 +1,106 @@
+Augnes-Core Development Progress Snapshot
+Date: 2025-06-06 (업데이트)
+
+────────────────────────────────────────
+
+Version Milestones
+────────────────────────────────────────
+• v0.4  (✅ 완료)
+– Self-Tuning Evaluator + stats weighting
+– Meta-Judgment Controller ACTIVE (rev 2)
+– Deferred strategy queue logging
+– ask-intent branch in Executor
+– Reflection Loop (MVP)
+– Memory deduplication + file-locking (P-4)
+– Semantic deduplication (RapidFuzz)
+– Multiprocess-safe JML (tested)
+
+• v0.5  (✅ 완료)
+– Reflection & penalty loop 자동화
+– strategy_stats.json에 fail_count, last_blocked, last_reward 등 penalty 통계 추가
+– 추천/배제/변형 자동화 파이프라인(MVP)
+– mutation 자동 등록, mutation_origin 지원
+– 추천/배제/변형 큐 자동 통합
+– dedup + multiproc stress test 개선
+
+• v0.6  (최신 완료)
+– Lean/Z3 Proof Stub 도입 (exec_proof 연동)
+– Executor에 분기 추가: prove/search_code/general_query + advantage 반환
+– Clarify Probe 자동 분기 (probe_templates) 및 FSM 통합
+– Advantage Logging: reward 대비 advantage 기록, 통계 연동
+– eval_strategy_stats.py 확장: avg_advantage 집계, stats에 반영
+– HotCacheManager 통합: 실시간 추천 캐시, stats+deferred 연동
+– recommend_strategy 로직 개선: mean_reward + 0.5*avg_advantage 기반 정렬
+– 추천 변화 자동 로그 기록 (logs/strategy_recommend_log.jsonl)
+– reflection/penalty/mutation/디버깅 루프 완전 자동화
+────────────────────────────────────────
+2. Code Status (핵심 모듈)
+────────────────────────────────────────
+• agent/executor.py
+✓ exec_proof(Stub) 연동
+✓ 판단 피드백 dict 구조 적용 (reward, advantage)
+✓ prove/search_code/general_query 분기 추가
+
+• memory/hotcache.py
+✓ HotCacheManager: stats+deferred 기반 활성 전략 캐시 구현
+✓ get_active_nodes, refresh 기능 완료
+
+• memory/jml.py
+✓ HotCache 기반 추천 + stats-weighted recommend
+✓ deduplication (goal_summary+strategy)
+✓ RapidFuzz similarity + file-lock, multiprocess 안전화
+✓ 추천 변화 로그 (_log_recommendation) 자동 기록
+
+• tools/probe_templates.py
+✓ 영어 Clarify Probe 질문 템플릿 구현
+✓ generate_probe 함수로 무작위 질문 생성
+
+• core/doc_fsm.py
+✓ Clarify Probe 분기 (should_probe, cooldown)
+✓ intent → execute/clarify/ask 분기 완성
+✓ feedback 저장에 advantage 필드 전달
+
+• tools/review_recent_judgments.py
+✓ reflection (자동 감지: 저보상/논리실패/미증명)
+✓ penalty(차단) 큐 자동 기록 및 중복 방지
+✓ stats 연동 (fail_count, last_blocked, reward, advantage)
+
+• tools/strategy_recommend.py
+✓ 추천/배제 전략 리스트 자동화, stats 기반 필터링
+
+• tools/strategy_mutation.py
+✓ penalty 전략 자동 변형 신규 등록
+✓ mutation_origin 표시, 추천 queue 재투입
+
+• tools/eval_strategy_stats.py
+✓ avg_advantage 집계 추가
+✓ stats JSON에 mean_reward/use_count/fail_count/avg_advantage 반영
+
+• tests/test_executor_prove.py
+✓ 판단 루프 단위 테스트 (stub proof → Executor → feedback 저장 → reflection loop)
+
+• tests/test_jml.py, tests/test_jml_multiproc.py
+✓ dedup/similarity 단일 테스트, multiprocess file-lock 실험 통과
+
+• logs/reflection_log.jsonl, data/deferred_strategies.jsonl, data/strategy_stats.json, logs/strategy_recommend_log.jsonl
+✓ 자동화 데이터/로그 생성 및 업데이트
+────────────────────────────────────────
+3. Pending Tasks (next sprint)
+────────────────────────────────────────
+[Step 1]  LLM/실행기와 추천 queue 연동, 실전 자동화 루프 실험
+[Step 2]  Mutation 전략 queue/실행 루프 통합 및 평가
+[Step 3]  정책 진화 구조의 시각화/통계 분석 자동화
+[Step 4]  PolicyNet(RL/Policy/Reward/Advantage) 실험
+[Step 5]  P-4 미세 튜닝(유사도 threshold, soft dedup) 및 고도화
+[Step 6]  CI/통합테스트, 실행 파이프라인 정리
+[Step 7]  Storage rollover (SQLite, LTM/RAG expansion, judgments.jsonl 롤오버)
+────────────────────────────────────────
+4. Known Issues & Risks
+────────────────────────────────────────
+• judgments.jsonl growth — rollover needed
+• LTM/RAG 여전히 dummy, long-term context 실험 필요
+• similarity threshold/penalty 기준 추가 튜닝 필요
+• reflection/penalty/mutation 통계의 실전 활용법 고도화 과제
+• UTF-8 surrogate warning on legacy emoji prints (harmless)
+
+End of snapshot – 2025-06-06 최신 자동화/정책 진화 파이프라인 동기화

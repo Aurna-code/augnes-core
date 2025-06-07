@@ -1,0 +1,120 @@
+Augnes Core – MVP Snapshot (v0.6 → 2025-06-06 최신)
+
+==================================================
+augnes-core/
+├── core/
+│   ├── doc_fsm.py                  # Goal → Intent → Self-Reg → Feedback (+Meta ctrl, Clarify Probe, advantage 연동)
+│   ├── models/
+│   │   └── judgment.py             # JudgmentMemoryEntry v1 (Pydantic, advantage 필드)
+│   └── __init__.py
+├── agent/
+│   └── executor.py                 # Executor: prove/search_code/general_query/advantage/proof 연동
+├── memory/
+│   ├── jml.py                      # JMLManager: HotCache 기반 추천, stats-weighted, dedup, multiproc-safe, recommend log
+│   ├── hotcache.py                 # HotCacheManager: stats+deferred 기반 활성전략 실시간 캐시
+│   └── rag.py                      # (dummy) RAG store
+├── tools/
+│   ├── eval_strategy_stats.py      # reward/use/fail/penalty/advantage/avg_adv 집계
+│   ├── review_recent_judgments.py  # Reflection/penalty/stats/mutation 자동화
+│   ├── strategy_recommend.py       # 추천/배제 queue 자동화
+│   ├── strategy_mutation.py        # penalty 전략 자동 변형/신규 등록
+│   ├── probe_templates.py          # Clarify Probe 질문 템플릿(영문)
+│   └── convert_feedback.py
+├── data/
+│   ├── judgments.jsonl             # v0/v1 logs (+advantage/meta_comment, 실시간)
+│   ├── strategy_stats.json         # mean_reward/use_count/fail_count/avg_advantage 등 (auto)
+│   └── deferred_strategies.jsonl   # meta-blocked/penalty queue
+├── logs/
+│   ├── reflection_log.jsonl        # Reflection/auto-review 기록
+│   └── strategy_recommend_log.jsonl# 추천 전략 자동 로그(시간/점수/후보)
+├── scripts/
+│   └── entry.py                    # CLI loop (DummyExecutor, action: prove)
+├── tests/
+│   ├── test_executor_prove.py      # stub proof → Executor → 판단 로그 → reflection/penalty loop 테스트
+│   ├── test_jml.py                 # dedup/similarity 단일 테스트
+│   └── test_jml_multiproc.py       # multiprocess file-lock/semantic 유사도 실험
+├── configs/
+│   └── self_regulate_rules.yaml
+└── docs/ ... (architecture diagrams, mermaid 등)
+
+───────────────────────────────────────────────
+1 · Execution Flow (v0.6, 2025-06-06 최신)
+───────────────────────────────────────────────
+1. Goal → Intent
+   - HotCache 기반 추천 1순위 + stats/advantage 기반 정렬
+   - strategy_stats + semantic dedup + fail_count/advantage 기반 추천/배제
+   - MetaJudgmentController가 fail_count↑/mean_reward↓/avg_advantage↓/use_count↑ 전략을 자동 차단
+   - 차단 시 intent_type = "ask" 또는 mutation/변형 루프 진입
+2. Clarify Probe 분기 (정보 부족/쿨다운 시 영어 템플릿 질문)
+3. Self-Regulation (rules.yaml)
+4. Executor returns reward / advantage / proof result / ask message
+5. _store_feedback() (실행 전/후) — meta_comment, advantage, penalty log, dedup, 자동 기록
+6. Strategy Stats auto-update (reward/use/fail/advantage/avg_adv 등)
+7. Multiproc safe (file lock) + reflection/penalty/mutation loop 자동화
+8. Penalty/mutation된 전략은 mutation_origin으로 신규 등록 → 추천 queue 재투입
+9. 추천 결과 및 후보/점수 logs/strategy_recommend_log.jsonl에 자동 기록
+
+───────────────────────────────────────────────
+2 · 핵심 모듈/구성요소 업데이트
+───────────────────────────────────────────────
+Component                  | Role                                            | Status
+--------------------------|-------------------------------------------------|--------
+Lean/Z3 Proof Stub         | 증명-기반 reward/logic_pass/advantage 반환      | ✅ 도입
+Executor                   | prove/search_code/general_query/advantage 지원  | ✅ 확장
+MetaJudgmentController     | mean_reward, fail_count, avg_advantage 자동 차단| ✅ active
+HotCacheManager            | 추천 전략 실시간 캐시, stats+deferred 연동      | ✅ active
+deferred_strategies.jsonl  | blocked/penalty strategy queue 자동화            | ✅ 완전 자동화
+Clarify Probe (probe_templates.py) | 정보 부족시 영어 템플릿 probe 질문     | ✅ 도입
+Advantage Logging          | reward 대비 advantage 기록, 통계 연동           | ✅ 도입
+review_recent_judgments.py | 저보상/논리실패/미증명 자동 리뷰+로깅         | ✅ MVP
+eval_strategy_stats.py     | avg_advantage 집계, stats/차단/추천에 반영      | ✅ 도입
+Semantic Deduplication     | RapidFuzz 중복 차단 + multiproc 안전화          | ✅ active
+Multiprocess File Lock     | 여러 프로세스 동시 기록 안전 보장                | ✅ verified
+strategy_mutation.py       | 차단 전략 자동 변형/신규 등록/mutation_origin   | ✅ active
+logs/strategy_recommend_log.jsonl | 추천 변화 실시간 기록                  | ✅ 도입
+
+───────────────────────────────────────────────
+3 · Sample Artifacts (업데이트 예시)
+───────────────────────────────────────────────
+strategy_stats.json:
+{
+  "use path.join": { "mean_reward":0.68, "use_count":2, "fail_count":0, "avg_advantage": 0.15, ... },
+  "prove this list files safely": { "mean_reward":0.0, "use_count":0, "fail_count":6, "avg_advantage": -0.5, "last_blocked":"..." }
+}
+
+deferred_strategies.jsonl:
+{ "goal_summary":"prove this list files safely", "blocked_on":"...", "reason":"Low reward, No logical evaluation" }
+
+logs/reflection_log.jsonl:
+{ "goal_summary": "prove this list files safely", "issues": ["Low reward", "No logical evaluation"], ... }
+
+logs/strategy_recommend_log.jsonl:
+{ "timestamp": "...", "strategy": "use path.join", "score": 0.755, "candidates": [["use path.join",0.755], ...] }
+
+───────────────────────────────────────────────
+4 · Verified CLI & Test Behavior (2025-06)
+───────────────────────────────────────────────
+✓ stub proof, prove action → Executor → reward/logic_pass/advantage 기록
+✓ 저보상/논리실패/미증명 판단은 reflection+penalty loop 자동 진입, stats+deferred 연동
+✓ HotCacheManager, stats+deferred 기반 추천/차단, avg_advantage까지 통합
+✓ Clarify Probe 자동 분기(쿨다운), probe_templates.py 영어 질문 활용
+✓ advantage 기록/통계/차단 기준, 추천 스코어 계산에 완전 반영
+✓ logs/strategy_recommend_log.jsonl에 전략/점수/후보 실시간 자동 기록
+✓ semantic 중복 차단, multiproc 실험 통과
+✓ mutation.py: block 전략 변형/재진입 루프 실험
+
+───────────────────────────────────────────────
+5 · Roadmap (v0.7~ / Next Steps)
+───────────────────────────────────────────────
+- LLM/실행기와 추천 queue 완전 연동, 실전 자동 실험
+- Penalty/mutation 전략 queue/실행 루프 통합 및 평가
+- 정책 진화 구조의 시각화/통계 분석 자동화
+- PolicyNet(RL/Policy/Reward/Advantage) 실험
+- Storage upgrade: JSONL → SQLite, LTM/RAG 확장
+- Full test suite for meta/reflection/semantic dedup
+- Dashboard/log 시각화/정책 추천 보고 자동화
+
+---
+이후 실전 LLM 연동·RL·장기 context·storage 확장·상태 대시보드까지 순차적 고도화 예정.
+현재 구조는 판단→clarify→execute→advantage/feedback→reflection→penalty→mutation→추천/배제→추천로그까지
+**모든 정책 루프가 데이터 기반으로 완전 자동화!**

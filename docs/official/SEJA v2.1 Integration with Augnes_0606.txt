@@ -1,0 +1,67 @@
+# SEJA v2.1 Integration with Augnes v0.6 Pipeline (업데이트 2025-06-06)
+
+이 문서는 SEJA v2.1의 구성요소를 현재 Augnes v0.6 파이프라인에 통합하는 현황과 우선순위를 정리합니다.
+
+1. 즉시 적용된 통합 모듈 (2025-06-06 기준)
+
+---
+
+아래 항목들은 최소한의 중단으로 통합되어 높은 가치를 제공하며, 이미 Augnes v0.6에 완전 적용 완료되었습니다.
+
+1.1 Rule Hot Cache Mapping (완료)
+
+* SEJA의 Rule Hot Cache와 Augnes의 `strategy_stats.json` 및 `deferred_strategies.jsonl` 큐를 완벽히 매핑
+* 룰/에피소드 캐시 노드를 stats/penalty 구조에 동기화하여 일관된 상태 유지
+* HotCacheManager가 이 매핑을 사용하여 실시간 추천 캐시 관리✅
+
+1.2 Clarify Probe Enhancement (완료)
+
+* 기존 `core/doc_fsm.py`의 `ask-intent` 분기에 SEJA의 Clarify Probe 로직을 확장
+* 정보 부족 또는 모순 상황을 탐지해 English probe\_templates 모듈로 질문 자동 생성
+* 3분 쿨다운 파라미터로 재질문 제한 로직 포함✅
+
+1.3 Turn-Level Advantage Logging (완료)
+
+* Executor 피드백 딕셔너리에 `advantage` 필드를 도입하여 매 턴마다 advantage 값을 수집
+* Advantage 값이 이후 RL/PolicyNet 실험 및 분석에 활용되도록 logs 및 stats 파이프라인에 반영✅
+
+2. 선택적 실험(PoC) 진행 중 모듈
+
+---
+
+아래 항목들은 중간 복잡도 모듈로, 현재 소규모 PoC(Proof of Concept)를 통해 검증 중이며,
+완전 도입 전 성능 평가 및 비용-효과 검토가 진행 중입니다.
+
+2.1 L0 Universal Geometry Adapter
+
+* Augnes의 임베딩 레이어를 SEJA L0 2-layer MLP 어댑터로 대체/랩핑하여 소규모 PoC 진행 중
+* 적은 샘플(예: 최근 100 judgments)로 semantic dedup 성능 개선 여부 검증 중
+* 비용 대비 효율성 평가 후 플랫폼 전체 롤아웃 여부 결정 예정
+
+2.2 Drift & Conflict Metrics
+
+* `tools/review_recent_judgments.py`를 확장하여 batch 샘플(최신 100 엔트리)에서 drift(변화량)와 conflict(모순 지표) 계산 기능 PoC 구현
+* 성능 오버헤드 측정 및 지표 유효성 검증 중
+* 결과 만족 시 Augnes 기본 Reflection 루프에 지표 통합 고려
+
+2.3 R³Mem Incremental Compression
+
+* `tools/compress_r3mem.py` 배치 잡으로 12시간 단위로 `judgments.jsonl`을 SQLite로 점진 압축하는 PoC 진행
+* 디스크 공간 절감 및 이력 조회 성능 검증 중
+* Cron 스케줄링 전 throughput 및 쿼리 성능 테스트 완료 후 자동화 계획
+
+3. 보류 또는 향후 고려 모듈
+
+---
+
+다음 항목들은 고위험/저효용 평가되어 향후 주요 마일스톤에서 도입 검토됩니다.
+
+* Full Memory Graph Replacement (L1 구조 완전 교체)
+* PolicyNet/RIL 완전 통합 (강화학습 파이프라인)
+* Adaptive Reward Engine Tuning (동적 보상 튜닝)
+* LTM/RAG Deep Integration (장기 문맥 관리)
+
+---
+
+현재 v0.6(2025-06-06) 파이프라인에 SEJA v2.1의 핵심 모듈이 성공적으로 통합되었습니다.
+다음 단계 PoC 결과에 따라 L0 어댑터, Drift/Conflict 지표, R³Mem 압축 모듈의 운영 도입 여부를 결정할 것입니다.
