@@ -1,0 +1,102 @@
+Augnes Judgment System – 이론적 배경 및 설계 철학 통합 정리 (2025-05-19)
+───────────────────────────────────────────────
+
+1. 프로젝트 총론: 목적과 대전제
+───────────────────────────────────────────────
+Augnes의 궁극 목표는 “스스로 진화하는 범용 판단자(General Agent)”로서,
+* 외부 정보 부족/불확실/모순 상황에서 **능동적으로 질문**하고,
+* **수리논리 정합성**과 **통계적 현실 적응**을 동시에 충족하는,
+* 자기-피드백(Self-Tuning)과 정책-파라미터(Fine-Tuning) 기반의 **다중 계층 판단 시스템**을 구현하는 것.
+
+▶ **RL(강화학습)** + **Formal Logic Proof** + **Meta-Judgment**가 “하나의 loop”로 연결되어,
+실전(코드, 검색, 외부 툴)과 이론(논리 증명, 정책 최적화)이 유기적으로 결합.
+
+───────────────────────────────────────────────
+2. Self-Tuning vs Fine-Tuning 구조 (judgment_tuning_strategy_updated.txt)
+───────────────────────────────────────────────
+- **Self-Tuning**: 
+  - 실시간 피드백, 행동 정책 조정, 판단 루프 내에서의 자기 강화/조정.
+  - 정책은 고정되지 않고 경험을 따라 동적으로 보정됨.
+  - "행동, 질문, 유보" 등 판단 루프의 모든 선택지가 RL(online policy gradient) 대상.
+- **Fine-Tuning**: 
+  - 축적된 판단 로그(데이터) 기반으로, LoRA·RLHF·Memory Replay 등 오프라인 파라미터 보정.
+  - 장기적·구조적 판단 능력을 모델에 내재화.
+
+▶ **두 구조를 계층적으로 혼합:**  
+Self-Tuning(경험·현실성) + Fine-Tuning(구조·정합성) → 판단의 적응성과 신뢰성 동시 강화
+
+───────────────────────────────────────────────
+3. 질문 판단 루프(Ask-Loop) 구조 ([AUGNES 질문 판단 루프 구조 v0.1].txt)
+───────────────────────────────────────────────
+- **질문 자체를 “판단의 한 action”**으로 설계  
+  - 정보 부족·모순·불확실 감지 → 질문/유보/즉시판단 간 RL 경쟁  
+  - 질문/유보도 보상 구조에 내재화(+1: 질문 후 이득, -1: 불필요한 질문, -2: 질문 생략 후 실패)
+
+- **구성 요소:**  
+  - 정보 부족 감지기(논리·통계), 질문 시점 결정기, 질문 내용 선택기, 메타 보상 평가기  
+  - 각 판단 단계(L1~L3)와 연동하여, “정확한 질문이 성공적 판단으로 이어지는 구조”를 강화
+
+───────────────────────────────────────────────
+4. 수리논리학 기반 계층 구조 통합 ([AUGNES 판단 시스템 수리논리학 기반 계층 구조 통합 제안.txt)
+───────────────────────────────────────────────
+- **Judgment Layer 계층화**
+  - L0: 통계 기반 RL 선택 루프 (빠른 현실 적응, 예측 효율성)
+  - L1: 수리논리 정당성 필터 (proof-check, 논리 모순/과잉 탐지)
+  - L2: 판단 가능성(Provability) 평가 (판단 유보/무리한 판단 감점)
+  - L3: 메타 피드백 루프(Meta-Judgment, 구조 자체 성능 강화)
+
+- **Dual Reward System**  
+  - RL 보상(정확도·효율성) + 논리 정당성 보상(논리·증명 기반) 분리  
+  - Meta-RL로 최종 통합
+
+▶ **현실 적응성(통계) ↔ 구조 정당성(논리)의 하이브리드 융합**  
+▶ 판단 실패 회피·유보도 정당성 유지라는 관점에서 보상화
+
+───────────────────────────────────────────────
+5. RL Pipeline과 통합 아키텍처 (augnes_integrated_judgment_architecture_v1.txt 외)
+───────────────────────────────────────────────
+- **Observation → PolicyNet → Symbolic Verifier → Reward Shaper** 메인 루프  
+- Symbolic Verifier(Lean/Z3 등)와 Reward Shaper가  
+  → 논리 정합성, 탐색 효율, risk, info-gain 등 여러 신호를 다중 보상 신호로 제공  
+- Curriculum Scheduler, Meta-Telemetry(탐색량/entropy/KL)로 실시간 정책 품질 감시  
+- **Memory Hygiene(중복 차단, 요약, self-state 캐시)와 연결**  
+- RL Hook(RWD/CKPT/LOG/SBX/CFG 등) API 사전 내장 → 실전 RL 확장·실험에 즉시 대응
+
+───────────────────────────────────────────────
+6. RL Experiment Phases & 정책 진화 시나리오 (augnes_rl_plan.txt 외)
+───────────────────────────────────────────────
+- α: Minimal logic proof/entailment RL 실험 (1스텝 증명, PPO)
+- β: Step-signal RLHF curriculum (2~5스텝 증명, shaped reward)
+- γ: Internal/External blended reasoning (도구 호출, latency-보상 포함)
+- δ: Human-in-the-Loop(주기적 수동 평가, reward model fine-tune)
+
+- 각 단계마다
+  - RL Hook API, memory dedup, meta-telemetry, safety guard(보상 해킹 감지 등) 점진적 통합
+
+───────────────────────────────────────────────
+7. 결론 – "Loop-Driven, Self-Reflective, Meta-Justified"
+───────────────────────────────────────────────
+* Augnes의 판단 시스템은  
+  – **“반복적 루프(Loop)”** (Observation→Judgment→Meta→Reflection→Policy update)  
+  – **“증명·통계 기반 하이브리드”** (논리와 RL, 보상 신호 통합)  
+  – **“자기-교정·자기-정당화·메타 강화”** (Meta-Judgment, 자기-조정/진화)
+
+* “질문”과 “판단 유보”를 판단의 중심에 놓음으로써  
+  – **능동적 정보 획득**과 **실패 회피/정당성 유지**를 동시 추구  
+  – 모든 경험(판단/실패/질문/유보)이 로그→정책→모델로 환류
+
+* 구조의 모든 계층/루프는 실제 코드 구조와 RL 실험, 미래 확장(다중에이전트, RAG, 자율 증명기)에 직결됨
+
+───────────────────────────────────────────────
+참고 문서:  
+- judgment_tuning_strategy_updated.txt  
+- [AUGNES 질문 판단 루프 구조 v0.1].txt  
+- [AUGNES 판단 시스템 수리논리학 기반 계층 구조 통합 제안.txt  
+- augnes_integrated_judgment_architecture_v1.txt  
+- augnes_rl_plan.txt  
+- augnes_judgment_architecture_v0.4.txt  
+- augnes_final_enhancements.txt  
+───────────────────────────────────────────────
+
+작성: Augnes Architecture & Judgment System Division  
+(2025-05-19)

@@ -1,0 +1,62 @@
+Reasoning Core 보조 모듈 통합 계획
+
+## 1. 목적
+
+* **범용 판단력의 진화적 강화**: 기존 Augnes Judgment Layer의 전략 및 툴 선택 능력에 더해, Deduction(연역)·Induction(귀납)·Abduction(가설 생성) 세 가지 추론 루틴을 분리하여 명확히 학습하고 통합함으로써, 난이도와 복잡도가 높은 과제에서도 다양한 추론 전략을 동적으로 조합·적용할 수 있는 추론 엔진을 보강한다.
+
+## 2. 통합 아키텍처 개요
+
+```
+┌───────────────────────────────┐
+│  Judgment Layer (v0.6 Augnes)  │
+│  • Goal→Intent  (HotCache + JML)│  
+│  • Decision Engine (policy loop)│
+│  • Meta‑Judgment Controller    │
+└───────────▲─────────┬──────────┘
+            │         │ feedback
+            │         ▼
+┌───────────────────────────────┐
+│  Reasoning Core (보조 모듈)      │
+│  • Deduction Head             │
+│  • Induction Head             │
+│  • Abduction Head             │
+│  • Confidence Scorer          │
+└───────────────────────────────┘
+            ▲         │ decisions
+            │         ▼
+┌───────────────────────────────┐
+│  Executor & Tool-RL (v0.6 Augnes)│
+│  • prove/search_code/general_query│
+│  • reward/advantage 반환          │
+│  • RL 보상 설계                   │
+└───────────────────────────────┘
+```
+
+## 3. 현행 Augnes 모듈과의 연동 설계
+
+* **Judgment Layer**: 기존 `Goal→Intent` 흐름, HotCache 기반 전략 추천, JML.recommend\_strategy()를 활용한 고수준 판단 및 전략 선택.
+* **Execution Layer**: `agent/executor.py`의 분기(`prove`, `search_code`, `general_query`) 및 RL 기반 보상·패널티 반환 로직.
+* **Memory Layer (JML + HotCacheManager)**: `memory/jml.py`와 `memory/hotcache.py`의 실시간 전략 통계·캐시 활용.
+* **강화학습 모듈**: PolicyNet/RIL 등 툴-RL 계획(현행/예정)을 Reasoning Core의 하위 RL 계층과 병렬로 운용 가능.
+
+## 4. 통합 단계별 작업
+
+| 단계     | 목표                        | 주요 작업                                                                        |
+| ------ | ------------------------- | ---------------------------------------------------------------------------- |
+| **P0** | PoC: Reasoning Core 효과 검증 | Deduction-only LLM ckpt를 Judgment Layer와 연결, CoT 정확도 A/B 실험                  |
+| **P1** | 데이터 자동화 및 추론 샘플 생성        | JML 로그를 Deduction/Induction 문제로 자동 변환, `tools/review_recent_judgments.py` 확장 |
+| **P2** | LoRA 미세조정 및 모델 병합         | 각 추론 head별 LoRA 어댑터 학습 및 mergekit으로 단일 ckpt 병합                               |
+| **P3** | 툴 사용 RL 환경 구축             | `trlX` + Gym 기반 툴 사용 RL 시뮬레이터 및 보상/효율 균형 보상 함수 설계                            |
+| **P4** | Judgment Layer 연동         | Reasoning Core를 `core/doc_fsm.py`에서 RPC 혹은 내부 호출로 연결, JML 스키마 확장             |
+| **P5** | 운영 모니터링 및 튜닝              | 메타-능력별 승률/효율성 메트릭, Grafana 대시보드 확장 및 logs/strategy\_stats 시각화                |
+
+## 5. 주요 리스크 및 과제
+
+* **모델 자원 증가**: 7B×3 헤드 파라미터 및 추가 연산. LoRA·sharding 적용, VRAM 관리 및 효율화 필요.
+* **추론 latency 증가**: RPC·추론 대기 120–200ms 예상. 캐싱/비동기 처리, 동적 head 선택 등 최적화 필요.
+* **보상 함수 및 통제 기준 복합화**: Reasoning Core의 RL 보상과 기존 Tool-RL 보상의 조화가 중요. 보상 설계 및 학습률 튜닝 필요.
+* **인프라 및 데이터 스키마 변경**: `judgments.jsonl` 스키마 확장, 롤오버/압축/모니터링 코드 리팩터링 필요.
+
+---
+
+**최종 결론**: 현행 Augnes의 전략·판단 코어, Execution, Memory 파이프라인을 손상하지 않고 Reasoning Core를 “보조 추론 모듈”로 이식하는 것은, 현실적 리스크가 낮고 진화적 이득이 큰 방향입니다. P0의 PoC 결과가 긍정적이면, 2–3 sprint 내에 단계별 통합이 가능하며, v0.7 로드맵의 주요 업그레이드로 적극 권장됩니다.

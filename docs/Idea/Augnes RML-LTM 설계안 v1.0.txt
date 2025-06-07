@@ -1,0 +1,94 @@
+Augnes RML-LTM 설계안 v1.0
+
+1. RML-LTM: 장기 저장 구조
+
+A. 저장 매체 및 스키마
+
+* 저장소: SQLite 또는 JSONL DB
+* 테이블: rules
+  • rule\_id    TEXT PRIMARY KEY
+  • expr       TEXT    (자연어 표현)
+  • formal     TEXT    (AST 또는 λ식)
+  • tags       TEXT    (JSON 배열)
+  • version    INTEGER
+  • status     TEXT    ('hot' | 'ltm' | 'archived')
+  • success    INTEGER
+  • fail       INTEGER
+  • last\_used  TIMESTAMP
+* 인덱스: status, tags, last\_used
+
+B. 저장/조회 API
+
+* add\_rule(rule\_obj)
+* get\_rules(status='ltm', filter\_tags=\[], limit=k)
+* update\_usage(rule\_id, success\_inc, fail\_inc, timestamp)
+
+C. 동기화
+
+* Startup: DB 로드 → 메모리 캐시 초기화
+* Shutdown: 메모리 캐시 → DB 커밋
+
+2. 승격·폐기 로직
+
+A. 승격 파이프라인 (batch job 매일 00:00)
+
+* candidates = get\_rules(status='hot')
+* for r in candidates:
+  if r.success >= N\_promote and r.fail <= K\_fail:
+  promote\_to\_ltm(r.rule\_id)
+
+승격 조건 기본값: N\_promote=5, K\_fail=1
+
+승격 함수 예시:
+
+```
+def promote_to_ltm(rule_id):
+    update rule.status='ltm', version += 1
+    log_promotion(rule_id, timestamp)
+```
+
+B. 폐기 검사 (batch job 매일 00:00)
+
+* status='hot' 중 last\_used < now - TTL\_hot  또는 fail > K\_fail\_total → status='archived'
+* 실시간: update\_usage() 호출 시 fail >= K\_fail\_realtime → 알림/보류
+
+C. 파라미터 관리
+
+* N\_promote, K\_fail, TTL\_hot, TTL\_ltm 등을 설정 파일 또는 환경변수로 관리
+
+3. 충돌 해소 메커니즘
+
+A. 충돌 감지
+
+* J-Layer가 동시에 여러 규칙 적용 시 결과 불일치 판단 → 충돌
+
+B. 충돌 처리 흐름
+
+```
+Apply Rules → check identical?
+  ├─ Yes → proceed
+  └─ No  → Conflict Resolver → entailment/vote →
+       ├─ Pass → choose winner rule → proceed
+       └─ Fail → invoke L2 Antinomic Loop → fallback to base generation
+```
+
+C. Conflict Resolver 구성
+
+1. Entailment Checker: z3/lean으로 결과 간 논리관계 검증
+2. Voting: 다수결 또는 confidence score 비교
+3. Fallback: 모두 실패 시 기본 모델 생성
+
+D. Meta-Judgment 연계
+
+* 충돌 로그를 JML에 기록, 반복 충돌 규칙은 fail++ → 폐기 대상
+
+4. 통합 타임라인
+
+Day 1: rule\_store.py에서 RML-DB 구축
+Day 2: HotCacheManager 확장하여 rule\_logger 연동
+Day 3: rule\_promoter.py 및 rule\_archiver.py 배치 구현
+Day 4: rule\_conflict.py 충돌 해소 모듈 구현
+Day 5: rml\_config.yaml 설정 파일 완성
+Day 6-7: 전체 통합 테스트 및 튜닝
+
+*Prepared by Augnes – Draft v1.0*

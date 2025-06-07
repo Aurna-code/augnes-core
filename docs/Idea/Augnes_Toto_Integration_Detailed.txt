@@ -1,0 +1,165 @@
+Augnes v0.6 Toto 통합 설계 문서 v0.2
+
+## 1. 대상 시나리오 요약
+
+| 단계   | 설명                                                                                                            |
+|--------|-----------------------------------------------------------------------------------------------------------------|
+| **Step 1** | NCL(Narrative Commentary Layer)에 Toto를 연결해 **불확실성 주석(uncertainty tags)** 생성                             |
+| **Step 2** | AFSM 분기 예측(predict_future_context)에 Toto forecast 기능 추가해 **정량화된 미래 분기 궤적** 반환                   |
+| **Step 3** | Drift Metrics 파이프에 Toto anomaly detection을 병합해 **이중 이상 감지** 및 재동기화 트리거 보강                       |
+
+---
+
+## 2. 구현 파일 및 위치
+
+```
+augnes-core/
+├─ core/
+│  ├─ doc_fsm.py                   # 프롬프트 생성·삽입 로직
+│  └─ narrative.py                 # NCL 래퍼: Toto 호출 · uncertainty tag 처리
+├─ afsm/
+│  └─ predictor.py                 # AFSM predict_future_context 확장
+├─ njsl/
+│  └─ drift_detector.py            # ChronoFormer drift + Toto anomaly 보조
+└─ configs/
+   └─ narrative_schema.yaml        # uncertainty, pull_forecast 필드 정의
+```
+
+---
+
+## 3. Step 1: Narrative Commentary Layer 강화
+
+**3.1 목표**  
+- 기존 `core/narrative.py`의 `generate_commentary(snapshot)` 함수에 Toto를 호출해  
+  “상태 예측 신뢰도”와 “불확실성 지표”를 포함한 주석을 생성  
+
+**3.2 구현 상세**  
+1. **Toto 파이프라인 초기화**  
+   ```python
+   from transformers import pipeline
+   toto = pipeline("text-generation", model="Datadog/Toto-Open-Base-1.0", trust_remote_code=True)
+   ```  
+2. **입력 포맷**  
+   ```python
+   prompt = f"""Analyze the following time series data and provide:
+1. Forecast for next 5 steps with mean and 95% confidence interval.
+2. Uncertainty level assessment (0-1).
+Data: {snapshot}
+"""  
+   ```  
+3. **출력 파싱 & 태깅**  
+   ```python
+   raw = toto(prompt, max_length=128)[0]["generated_text"]
+   commentary = parse_toto_output(raw)
+   narrative_buffer.append({
+       "type": "uncertainty",
+       "text": commentary
+   })
+   ```  
+4. **연결 위치**:  
+   - `core/doc_fsm.py` 내 `build_narrative()` 호출 직후  
+   - `core/narrative.py`에 `generate_commentary()`와 `append_uncertainty()` 구현  
+
+**3.3 기대 효과**  
+- 사용자·메타제어기가 **현재 예측 신뢰도**를 파악  
+- 불확실성 기반 **동적 의사결정 조정** 가능  
+
+**3.4 자원 소모**  
+- VRAM: ≥0.8 GB  
+- 응답 시간: <300 ms per call  
+
+---
+
+## 4. Step 2: AFSM 분기 예측 보조
+
+**4.1 목표**  
+- `afsm/predictor.py`의 `predict_future_context(steps)`에 Toto forecast를 추가  
+
+**4.2 구현 상세**  
+```python
+def predict_future_context(self, steps: int) -> Dict[str, Any]:
+    branches = self._generate_branches()
+    time_series = self._collect_pull_score(branches)
+    forecast = toto_forecast(time_series, steps)
+    return {
+        "branches": branches,
+        "pull_forecast": forecast  # {"F3": {"mean":0.12,"ci":0.05}, …}
+    }
+```
+- 호출 위치: `core/doc_fsm.py` 내 `afsm.predict_future_context()` 결과 활용  
+
+**4.3 기대 효과**  
+- AFSM이 **미래 분기 강도 변화**를 반영해 분기 선택 품질 향상  
+
+**4.4 자원 소모**  
+- VRAM: +0.8 GB  
+- 지연: 300 ms  
+
+---
+
+## 5. Step 3: Drift Metrics 보조
+
+**5.1 목표**  
+- `njsl/drift_detector.py`에 Toto anomaly score 지원 추가  
+
+**5.2 구현 상세**  
+```python
+def compute_anomaly(self, series: List[float]) -> float:
+    drift = self.chrono_drift(series)
+    raw = toto(f"Detect anomalies in: {series}", max_length=64)[0]["generated_text"]
+    to_score = parse_anomaly_output(raw)
+    return (drift + to_score) / 2
+
+if compute_anomaly(series) > self.threshold:
+    self.trigger_reweave()
+```
+- 호출 위치: `njsl/drift_detector.py: detect_drift()`  
+
+**5.3 기대 효과**  
+- **이중 이상 감지**로 재동기화 적시성↑  
+
+**5.4 자원 소모**  
+- RAM: ~0.3 GB  
+- GPU 사용: 1–3%  
+
+---
+
+## 6. 테스트 & 검증
+
+1. **Unit Tests**  
+   - `tests/test_narrative_uncertainty.py`  
+   - `tests/test_afsm_forecast.py`  
+   - `tests/test_drift_anomaly.py`  
+
+2. **Integration Tests**  
+   - `tests/test_executor_fullflow.py` 확장  
+
+3. **성능 벤치마크**  
+   - MINT-style multi-turn consistency 비교  
+   - `strategy_stats.json` 내 `logic_pass_rate` 변화 관찰  
+
+---
+
+## 7. 결론
+
+- **Step 1–2**: 즉시 적용 가능, 불확실성 주석·정량 예측 제공  
+- **Step 3**: 중장기 보강, drift 감지 정확도↑  
+- 모두 **LoRA/4-bit 없이** 12 GB 환경에서 실험 가능  
+
+---
+
+## 8. 남은 과제
+
+1. **Narrative Buffer & NCL 스캐폴딩**  
+   - `memory/narrative_buffer.py`에 `NarrativeBuffer` 클래스(append_anchor, append_uncertainty, get_last_anchor 등)  
+   - `core/narrative.py`에 `generate_commentary()`, `parse_toto_output()`, `append_uncertainty()` 함수 스텁  
+
+2. **AFSM 모듈 뼈대**  
+   - `afsm/predictor.py`에 `AFSM` 클래스와 `predict_future_context()`, `_generate_branches()`, `_collect_pull_score()` 메서드 스텁  
+
+3. **NJSL DriftDetector 뼈대**  
+   - `njsl/drift_detector.py`에 `DriftDetector` 클래스, `detect_drift()`, `compute_anomaly()` 스텁  
+
+4. **스캐폴딩 & 초기 테스트**  
+   - 각 모듈 stub에 `pass` 또는 로그 출력 추가 후 단위 테스트 구현  
+   - 테스트 통과 시 통합 테스트 및 성능 벤치 순차 진행  

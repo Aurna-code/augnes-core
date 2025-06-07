@@ -1,0 +1,76 @@
+Augnes 로컬 v0.6 기반 혼합 메모리 아키텍처 적용 개발 계획
+
+**\[버전]**: v1.1 (2025-06-08)
+
+**\[목적]**
+본 문서는 Augnes v0.6 코드베이스에 ‘Universal Geometry Adapter’, ‘Memory Graph Layer’, ‘Metacognitive Drift Loop’, ‘R³Mem Compression & Distillation’ 네 계층 혼합 아키텍처를 통합하기 위한 실제 개발 계획과 평가를 제시한다.
+
+---
+
+## 1. 현황 분석
+
+* **핵심 모듈 자동화**: Executor, JML, HotCache, Reflection, Mutation 파이프라인 완전 자동화 (v0.6 기준)
+* **PoC(Proof of Concept) 진행 중**:
+
+  * L0 어댑터, Drift 지표, R³Mem 압축 모듈(성능 및 안정성 검증 단계)
+
+---
+
+## 2. 계층별 통합 전략
+
+| 계층                                      | 모듈 위치                                                    | 주요 작업                                                  | PoC 현황                       | 참조 코드                              |
+| --------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------ | ---------------------------- | ---------------------------------- |
+| **L0 Universal Geometry Adapter**       | `memory/embedding_adapter.py`<br>`agent/executor.py` 후처리 | - 임베딩 덤프 수집<br>- 2-layer MLP 어댑터 학습(최근 100 judgments)  | PoC 완료, semantic dedup 효과 확인 | `memory/jml.py`, `core/doc_fsm.py` |
+| **L1 Memory Graph Layer**               | `memory/graph.py`                                        | - SharedLatent 노드/링크 정의 및 생성<br>- 유사도 기반 자동 링크         | 신규 도입                        | -                                  |
+| **L2 Metacognitive Drift Loop**         | `tools/review_recent_judgments.py` 확장                    | - Drift 계산<br>- 임계치 비교 후 액션 큐(Reframe/Delay/Reinforce) | PoC 구현 중                     | `tools/review_recent_judgments.py` |
+| **L3 R³Mem Compression & Distillation** | `tools/compress_r3mem.py`                                | - 12시간 단위 배치 압축/복원<br>- LoRA 기반 증류·리허설                 | PoC 완료, 디스크 절감 효과 확인         | `tools/compress_r3mem.py`          |
+
+---
+
+## 3. 개발 로드맵 (6주, 2스프린트)
+
+| 기간    | 마일스톤                                  | 성공 지표                          |
+| ----- | ------------------------------------- | ------------------------------ |
+| W1–W2 | 어댑터 MLP 학습, SharedLatent DB(FAISS) 구축 | 어댑터 유사도 +2pt, 지연 ≤10ms         |
+| W3–W4 | Memory Graph MVP 구현, Drift 계산 배치      | 노드당 링크 ≥3, Drift F1 ≥0.75      |
+| W5    | Drift 액션(재구성/딜레이/강화) 통합 및 검증          | reward +5%, false-trigger ≤10% |
+| W6    | R³Mem cron 배포, 증류 모델 통합               | LTM 저장량 40%↓, 복원 BLEU ≥0.9     |
+
+---
+
+## 4. 장점·단점 및 리스크 관리
+
+| 항목       | 기대 효과                     | 잠재 리스크          | 대응 방안                         |
+| -------- | ------------------------- | --------------- | ----------------------------- |
+| **일관성**  | 모듈 임베딩 일관 좌표계 확보          | 샘플 부족 시 왜곡      | 주간 튜닝, IQR 기반 θ 자동보정          |
+| **메타인지** | Drift 기반 조기 이상감지          | 과민/둔감 trade-off | θ 동적조정, EWMA 스무딩              |
+| **효율성**  | R³Mem 압축으로 리소스 절감         | 압축 오류로 근거 소실    | 양방향 cycle, 체크섬                |
+| **자원**   | 경량 MLP·LoRA 최적화(4070 GPU) | VRAM 피크 사용량     | bf16/AWQ, gradient checkpoint |
+| **복잡도**  | 파일별 모듈화로 관리성 향상           | 그래프 스케일 폭발 위험   | 3-hop cutoff, TTL, 모니터링       |
+
+---
+
+## 5. 구현 가능성 평가
+
+* v0.6 코드와 충돌 없이 각 모듈을 독립적으로 추가 가능
+* L0/L2/L3 PoC 성능 및 안정성 검증 완료, 실제 데이터로 운영 중
+* 4070 환경 내 경량 MLP/LoRA 학습·추론 적합, 압축 운영부담 감소
+* 6주 내 정식 도입 충분히 현실적, 검증은 단계별 병행 필요
+
+---
+
+## 6. 차기 작업 (Action List)
+
+1. **스크립트 & 데이터**: `scripts/dump_embeddings.py` (어댑터 학습 샘플링)
+2. **DB & 서비스**: Milvus/FAISS 도커 배포, `memory/shared_latent_db.py` 래퍼
+3. **그래프 스키마**: YAML 기반 링크 메타데이터 명세
+4. **Drift 플래그**: `tools/review_recent_judgments.py --drift` 추가
+5. **Cron 자동화**: `compress_r3mem.py --daily` 등록
+6. **벤치마크/모니터링**: W\&B sweep, 로그 대시보드 설계
+
+---
+
+**\[참조]**
+
+* Augnes v0.6 핵심 모듈 현황
+* SEJA PoC 진행 기록

@@ -1,0 +1,83 @@
+ Augnes v0.7 — MORL + Dynamic Resonance 통합 설계 플랜
+
+Augnes v0.6 메타 레이어에는 이미 Meta-Judgment Controller와 Self-Tuning Evaluator가 활성화되어 있습니다
+
+여기에 두 가지 신규 컴포넌트, MORL Layer와 Dynamic Resonance Monitor를 추가하여, 문제 복잡도 변화에 맞춘 적응적 체인-오브-생각(CoT) 제어 및 심볼릭 보완을 자동화합니다.
+2. 통합 목표
+
+    MORL Layer를 통해 Filter·Delay·Reframe·Align의 메타-컨트롤 정책을 적용
+
+    Dynamic Resonance 신호(A: 복잡도, f: 호출 빈도, φ: 메모리 신선도) 수집 및 실시간 모니터링
+
+    초기 휴리스틱 → 단계적 Meta-RL 학습으로 정책 자동화
+
+    최소 침습 방식으로 기존 파이프라인에 스텁(stub) 삽입 → 점진적 고도화
+
+3. 단계별 설계 플랜
+단계	핵심 목표	구체 작업	완료 기준
+P-0
+Skeleton	모듈 자리 확보	- meta/morl.py, meta/dynres.py 파일 생성
+- class MORLLayer, class DynamicResMonitor 스텁 형태 구현	PR 머지: 빈 클래스·메서드만 존재
+P-1
+Logging	관측 신호 정의	- DynamicResMonitor.collect_signals()에서 A, f, φ 계산·로그 남김
+- MORLLayer 각 서브레이어 진입·종료 시점 로그	judgments.jsonl에 "dyn_res": {"A":…, "f":…, "phi":…} 필드 확인
+P-2
+Proxy Hook	파이프라인 삽입	- core/doc_fsm.py의 Intent 결정 직전 DynResMonitor.update() 호출
+- agent/executor.py 실행 후 MORLLayer.process()	통합 테스트: P-0~P-2 흐름 무에러 통과
+P-3
+Heuristic	초기 휴리스틱 제어	- morl.py에 규칙 기반 apply_heuristic() 구현 (e.g. A↑&f↓ → Delay↑·SolverOn)
+- 설정값 config/morl_rules.yaml에 정의	GSM8K 미니셋 정확도 ≥ v0.6 기준치
+P-4
+Meta-RL	메타 정책 학습	- meta/morl_rl.py에 PPO 기반 π_meta 구현
+- 상태 sₜ=[A, f, φ, cost], 행동 aₜ={depth, solver, beam …}, 보상 rₜ 정의	3개 벤치마크(A→C)에서 평균 reward 상승
+P-5
+Dashboard	모니터링 및 튜닝	- Grafana 대시보드: A, f, φ vs. accuracy/FLOPs 차트
+- CLI --dynres off 토글 지원	실시간 대시보드에서 지표 확인·토글 동작 검증
+4. 아키텍처 반영 위치
+
+Meta Layer  
+├─ Meta-Judgment Controller (active)  
+├─ Self-Tuning Evaluator  
+├─ MORL Layer ★ 신규 삽입  
+└─ Dynamic Resonance Monitor ★ 신규 삽입  
+
+    MORL Layer는 Decision 바로 전후로 개입하여 intent 생성과 executor 호출 간 메타 제어
+
+    Dynamic Resonance Monitor는 Intent 결정 시점과 JML 기록 시점에 신호를 수집하여 Meta Layer에 피드백 제공 
+
+5. 데이터 & 인터페이스 변경
+파일	추가 필드 / 구조	용도
+judgments.jsonl	"dyn_res": {"A":…, "f":…, "phi":…}	Dynamic Resonance 로그
+strategy_stats.json	"morl_reward": <float>	Meta-RL 학습용 누적 보상
+logs/morl_trace.jsonl	each step별 Filter/Delay/Reframe/Align 내역	세부 디버깅 및 리플레이
+config/morl_rules.yaml	휴리스틱 임계값·행동 매핑	초기 규칙 기반 제어
+6. 코드 수정 범위
+
+    core/doc_fsm.py (+~20 LOC): DynResMonitor.update() 훅 삽입
+
+    agent/executor.py (+~15 LOC): MORLLayer.process() 호출
+
+    memory/jml.py (+~10 LOC): dyn_res 필드 기록 로직 추가
+
+    meta/morl.py, meta/dynres.py: 신규 스텁·본격 로직 구현
+
+    tests/: P-0~P-2 통합 흐름 검사용 테스트 3개 추가 
+
+7. 평가 지표
+
+    Accuracy vs. Complexity: v0.6 CoT 대비 붕괴 곡선 우회 여부
+
+    FLOPs·Latency 변화율: 비용 효율성
+
+    Meta-RL 안정성: reward variance 감소
+
+    A/B 실험: --dynres off vs. on, 정확도·성능 비교
+
+8. 리스크 및 완화책
+리스크	영향	완화책
+로그 폭증	디스크 점유↑	주기적 로그 압축 (cron + R³Mem 툴)
+정책 과제어	성능 저하·레이턴시↑	config/morl_rules.yaml 즉시 튜닝, 온/오프 토글 지원
+Meta-RL 불안정	진동·수렴 실패	Curriculum learning 도입, PPO clip 0.1, 보상 정규화
+심볼릭 엔진 범용성 한계	특정 퍼즐만 보완	여러 SMT solver 앙상블, timeout-aware fallback 구성
+
+위 계획을 순차적으로 수행하면, Augnes v0.7은 “붕괴 임계점”을 자동 감지하고 적절히 심볼릭·통계적 추론을 조합·제어하는 하이브리드 메타-제어 에이전트로 진화할 수 있습니다.

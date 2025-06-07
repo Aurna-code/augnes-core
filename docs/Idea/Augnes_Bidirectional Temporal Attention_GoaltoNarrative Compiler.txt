@@ -1,0 +1,95 @@
+Augnes Integration Plan: Bidirectional-Temporal Attention & Goal-to-Narrative Compiler
+
+## 1. 개요
+- 목표: 즉시 성능 개선(일관성·추론 품질)과 Teleology 강화(내적 내러티브 심화)를 동시에 달성
+- 대상 모듈
+  1. Bidirectional-Temporal Attention
+  2. Goal-to-Narrative Compiler
+
+## 2. 통합 설계
+
+### 2.1 Bidirectional-Temporal Attention
+- 위치: core/doc_fsm.py → 프롬프트 생성 부분
+- 기능:
+  - 판단 전 LLM prompt에 과거 Anchor(Narrative Buffer)와 미래 Forecast 슬롯 동시 주입
+  - 예시 슬롯:
+    prompt = f"""
+    [Past Anchor: {narrative_buffer.get_last_anchor()}]
+    [Future Forecast: {afsm.predict_future_context(steps=10)}]
+    [Current Query: {user_input}]
+    """
+- 효과: 추론 일관성·맥락 유지율 즉시 향상
+- 구현 요건:
+  - narrative_buffer.get_last_anchor() API 추가
+  - afsm.predict_future_context() 래퍼 함수 구현
+
+### 2.2 Goal-to-Narrative Compiler
+- 위치: core/doc_fsm.py → Intent framing 직후, Decision Layer 앞
+- 기능:
+  - 상위 목표(Goal) 객체를 “서사 이벤트 시퀀스” 템플릿으로 변환
+  - YAML 스키마 예시:
+    - event: "Initialize strategy"
+      pre: "Goal extracted"
+      post: "Intent framed"
+    - event: "Execute action"
+      pre: "Intent confirmed"
+      post: "Feedback received"
+  - 변환 결과를 prompt context에 포함:
+    narrative_events = compile_goal_to_narrative(goal_obj)
+    prompt_context.update({"narrative_events": narrative_events})
+- 효과: 계획-추론 경로 명료화, 의사결정 품질·설명력 강화
+- 구현 요건:
+  - compile_goal_to_narrative() 함수 정의 (GPT-4o 소형 컨텍스트 API 활용)
+  - YAML 스키마 검증기(yaml 라이브러리)
+
+## 3. 모듈 의존 및 데이터 흐름
+
+flowchart LR
+  subgraph Decision Layer
+    A[UserInput] --> B[Goal Extraction]
+    B --> C[Intent Framing]
+    C --> D[Goal-to-Narrative Compiler]
+    D --> E[Prompt Builder]
+    E --> F[Bidirectional-Temporal Attention Injector]
+    F --> G[LLM Judgment Engine]
+  end
+
+  subgraph Memory & Narrative
+    H[Narrative Buffer]
+    G -->|Feedback| H
+    H -->|get_last_anchor| F
+  end
+
+  subgraph AFSM
+    I[AFSM Module]
+    I -->|predict_future_context| F
+  end
+
+## 4. 구현 파일 예시
+
+augnes-core/
+├─ core/
+│  ├─ doc_fsm.py             # ① prompt slot 확장, ② compile_goal_to_narrative() 호출
+│  └─ narrative.py           # compile_goal_to_narrative(), yaml schema, future_context 래퍼
+├─ afsm/
+│  └─ predictor.py           # predict_future_context 구현
+├─ memory/
+│  └─ narrative_buffer.py    # get_last_anchor(), append_anchor()
+└─ configs/
+   └─ narrative_schema.yaml  # Goal-to-Narrative 이벤트 템플릿 스키마
+
+## 5. 테스트 계획
+
+1. Unit Test:
+   - tests/test_doc_fsm_temporal.py
+   - tests/test_narrative_compiler.py
+
+2. Integration Test:
+   - tests/test_executor_fullflow.py
+     - 기존 test_executor_prove.py에 과거·미래 슬롯 및 내러티브 이벤트 포함 여부 검증
+
+3. 성능 검증:
+   - MINT-style multi-turn consistency benchmark를 기존 루프와 비교
+   - strategy_stats.json에서 추론 일관성 지표 변화 관찰
+
+*이 문서는 Augnes 개발 설계에 Bidirectional-Temporal Attention과 Goal-to-Narrative Compiler를 포함하기 위한 구체적 실행 계획입니다.*
