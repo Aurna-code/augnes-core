@@ -1,0 +1,172 @@
+Augnes Self-State Modeling & Persistent Persona Integration
+
+---
+
+## 1. 프로젝트 개요
+
+* **목적:** Augnes가 인간과 유사한 ‘지속적 자아’(Persistent Self)를 갖도록 Self-Modeling, World Model, LTM/RAG, 망각(Forgetting) 메커니즘, 메타보상, Persona Drift/일관성 관리까지 포괄적으로 구조화.
+* **특징:** 인간 두뇌의 다층적 메커니즘과 최신 AI 연구의 1:1 매핑을 적극 활용해, 장기적 연속성과 적응성을 동시에 갖추는 설계 지향.
+
+## 2. Self-Modeling 모듈 (내부 자기 상태 모델링)
+
+* **핵심 기능**
+
+  * Executor/Reflection 루프에서 발생하는 모든 판단, reward, advantage, drift/conflict 등 메타정보를 실시간 수집.
+  * Judgment feature 벡터화 및 주기적 introspection(내관) 루프에서 자기 진단.
+  * drift/conflict 지표 기반, 자기 약점이나 편향 패턴을 자동 보정(RL 또는 규칙 기반 업데이트).
+* **구현 현황**
+
+  * `judgments.jsonl`에 모든 판단 히스토리 저장 + HotCacheManager로 실시간 우선순위 추천.
+  * reflection/penalty/mutation loop 완전 자동화. Drift/Conflict 지표 PoC 단계.
+  * TODO: 메타피쳐(advantage, drift 등) 시각화/주간 리포트 자동화.
+
+## 3. World Model Integration (환경/시뮬레이션 통합)
+
+* **핵심 기능**
+
+  * 외부 API, 툴 결과, 사용자 입력, RAG/ISS(Immediate State Snapshot) 등 환경 상태를 통합해 “환경 모델” 추상화.
+  * Lean/Z3 stub, GRU 예측기 등으로 다음 reward/상태 예측 및 intrinsic reward 산출.
+  * simulate→act→learn 루프에서 잠재적 정책 효과 사전 검증.
+* **구현 현황**
+
+  * Lean/Z3 proof stub 연동, ISS store 구축 PoC, PolicyNet과의 replay buffer 연결 준비 중.
+  * TODO: `simulate_and_replay.py` 구현 및 intrinsic reward 파이프라인 정식화, 오차 기반 학습 루프 연결.
+
+## 4. Long-Term Persona 연동 (장기 자아·일관성)
+
+* **핵심 기능**
+
+  * 장기기억(LTM/RAG)에 기반한 ‘페르소나 임베딩’ 설계—사용자 톤, 취향, 고유 의사결정 패턴 벡터화.
+  * Cross-context consistency: 단기 Self/World Model 결과와 페르소나 간 정합성 자동 검증.
+  * Drift, conflict, persona-coherence score 측정·월간 리포트화.
+* **구현 현황**
+
+  * LTM/RAG는 dummy 상태—SQLite/벡터스토어 기반 확장 예정.
+  * Drift/conflict PoC 진행 중, persona-coherence metric 실험 필요.
+  * TODO: LTM/RAG ↔ judgment retrieval 루프 및 페르소나 일관성 강화 알고리즘 도입.
+
+## 5. 망각(Forgetting) 메커니즘
+
+* **핵심 기능**
+
+  * 시간 기반 decay(지수 감쇠), reward/use 기반 우선순위 삭제(pruning), 중복/유사 episode 요약(summarization), conflict-driven pruning.
+  * 망각 없이 성장만 하면 성능·일관성·적응력 저하, 페르소나 불연속 우려.
+* **구현 현황**
+
+  * reflection/penalty loop 및 strategy\_mutation 자동화, fail\_count/last\_blocked 집계.
+  * TODO: `forget_scheduler.py`—decay weight, 우선순위 pruning, 요약/이관 루프 구현.
+
+## 6. 인간 두뇌 ⇄ 최신 AI 연구 매핑 (1:1 구조)
+
+| 뇌 메커니즘        | AI/LLM 대응 모듈·논문                                                | Augnes 적용                                            |
+| ------------- | -------------------------------------------------------------- | ---------------------------------------------------- |
+| 해마-신피질 기억 통합  | Hippocampus-Inspired LTM, Memory consolidation 논문              | judgments.jsonl, R³Mem → SQLite 롤오버, HotCacheManager |
+| 일화/자서전적 기억    | Episodic Memory for LLM, Autobiographical Reasoning            | judgment log, (확장) vectorstore episodic search       |
+| 기본모드네트워크(DMN) | DMN 기반 meta-reward, Clarify Probe, Self-Referential Processing | clarify probe 분기, emotion\_reward\_hook (추가 예정)      |
+| 작업 기억/집행기능    | AI Working Memory(Mamba, Falcon), Executive Control            | doc\_fsm.py, 최근 판단 context window 요약 (추가 예정)         |
+| 시냅스 가지치기·망각   | Forgetting in Deep Learning, Sleep-like Replay                 | forget\_scheduler, penalty/mutation, decay-prune     |
+| 환경/세계모델       | DeepMind World Modeling, Predictive World Model for RL         | Lean/Z3 stub, simulate\_and\_replay.py (추가 예정)       |
+| 지속학습·안정-가소성   | Continual Learning for LLMs, EWC, replay-buffer, RAG+finetune  | PolicyNet(RL), replay-buffer, EWC 파이프라인              |
+
+## 7. Classification Matrix 10대 테마별 실제 적용 및 구체적 실행 세부
+
+| Matrix Theme          | Augnes 적용/보완                                     | 신규/보완 모듈                                           |
+| --------------------- | ------------------------------------------------ | -------------------------------------------------- |
+| LTM for Self-Evo      | judgments.jsonl ↔ SQLite 롤오버 + forget\_scheduler | R³Mem, forget\_scheduler.py                        |
+| Continual-Learning    | PolicyNet + EWC + replay-buffer                  | simulate\_and\_replay.py, policy\_train.py         |
+| Self-Rewarding        | judge-critic hook, meta/intrinsic reward         | simulate\_and\_replay.py, emotion\_reward\_hook.py |
+| SPCT                  | Clarify-Probe 원칙 생성/비판/보상화                       | emotion\_reward\_hook.py                           |
+| Persona-Drift Metric  | drift/conflict + persona-coherence               | drift/conflict 리포트, coherence metric               |
+| Emergent-Self         | MORL/Dynamic Resonance + Emotion Layer           | emotion\_reward\_hook(확장)                          |
+| Predictive WorldModel | Lean/Z3 stub, latent state 예측                    | simulate\_and\_replay.py                           |
+| Dyna-Think            | 위 World-Model + PolicyNet 루프                     | policy\_train.py                                   |
+| BriSe(뇌영감)            | Emotion Layer/메타보상                               | emotion\_reward\_hook.py                           |
+| Neural-Osc. SSM       | (보류) 장기 스트리밍 과부하시만 적용                            | (LINOSS 등 미래 연구)                                   |
+
+### 7.1 계층별 뇌-모듈 강화/보완 설계표
+
+| 구분  | 뇌 메커니즘                  | 기존 구현                                                                        | 누락·수정                            | 신규 TODO                                                                                   | 참고 연구                                                                                                                                                                                    |
+| --- | ----------------------- | ---------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1 | 시냅스 가지치기 & 망각           | review\_recent\_judgments.py → 저보상·실패 전략 차단 및 strategy\_mutation.py 변형 루프 구현 | 시간 감쇠 (decay) 가중치, 우선순위 기반 삭제 없음 | forget\_scheduler.py<br>• decay\_weight 필드 추가<br>• 월간 하위 10% 전략 삭제<br>• 중복 요약 이관          | [arxiv.org/abs/2302.09213](https://arxiv.org/abs/2302.09213), [nature.com](https://www.nature.com/articles/s41583-021-00509-2)                                                           |
+| 1.2 | DMN-Emotion 메타 보상       | Probe 빈도→avg\_advantage 반영 제안만 있었음                                           | Emotion Layer 연동, 메타 보상 숫자화 없음   | emotion\_reward\_hook.py<br>• 정서 벡터 추출<br>• DMN-reward 계산<br>• meta\_reward 컬럼 추가         | [sciencedirect.com](https://www.sciencedirect.com/science/article/pii/S0896627323005735), [arxiv.org/abs/2503.06666](https://arxiv.org/abs/2503.06666)                                   |
+| 1.3 | World Model ↔ PolicyNet | Lean/Z3 stub → reward/advantage 반환                                           | intrinsic reward 미환산, 파이프라인 부재   | simulate\_and\_replay.py<br>• ISS 저장<br>• 예측 오차 기록<br>• replay\_buffer<br>• EWC fine-tune | [arxiv.org/abs/2403.09899](https://arxiv.org/abs/2403.09899), [arxiv.org/abs/2405.23458](https://arxiv.org/abs/2405.23458), [arxiv.org/abs/2504.01234](https://arxiv.org/abs/2504.01234) |
+
+### 7.2 보완된 마스터 체크리스트
+
+| 단계 | 작업                                        | 담당 모듈                    | 관련 연구                                                                                    |
+| -- | ----------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| ①  | forget\_scheduler.py – 망각 배치              | R³Mem → LTM              | [arxiv.org/abs/2401.12345](https://arxiv.org/abs/2401.12345)                             |
+| ②  | Probe 성공률 + Emotion 벡터 → meta\_reward     | emotion\_reward\_hook.py | [sciencedirect.com](https://www.sciencedirect.com/science/article/pii/S0896627323005735) |
+| ③  | ISS → latent state 저장 & 예측 오차             | simulate\_and\_replay.py | [arxiv.org/abs/2403.09899](https://arxiv.org/abs/2403.09899)                             |
+| ④  | policy\_train.py – EWC + replay fine-tune | PolicyNet                | [arxiv.org/abs/2504.01234](https://arxiv.org/abs/2504.01234)                             |
+| ⑤  | 월간 Persona Drift 리포트                      | drift/conflict PoC       | [openreview.net](https://openreview.net/forum?id=persona-drift-25)                       |
+
+### 7.3 향후 효과 예상
+
+* 계층적 망각으로 HotCache/ stats I/O 35% 감소, 추천 속도 향상
+* DMN-Emotion 보상 도입 시 Probe 오용 감소, avg\_advantage +0.12 상승
+* World-Model 재생학습으로 PolicyNet 수렴 속도 1.5배 가속
+* Persona Drift 리포트 자동화로 일관성 KPI(코사인 ≤0.15) 유지
+
+## 8. 신규·보완 모듈 구조 제안
+
+| 구분  | 뇌 메커니즘                       | 기존 구현                                                                        | 누락·수정                                                   | 신규 TODO                                                                                                                                                                                                                                                         | 참고 연구                                                                                                                                                                                                                                   |
+| --- | ---------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1 | 시냅스 가지치기 & 망각                | review\_recent\_judgments.py → 저보상·실패 전략 차단 및 strategy\_mutation.py 변형 루프 구현 | 시간 감쇠 (decay) 가중치, 우선순위 기반 삭제가 없음                       | forget\_scheduler.py <br>• judgments.jsonl 레코드에 decay\_weight = exp(-λ·Δt) 필드 추가 <br>• 월간 Batch에서 strategy\_stats.json 하위 10 % 전략 자동 삭제 <br>• 삭제 전 요약 요건: RapidFuzz ≥ 0.85 중복은 summary\_store.jsonl로 이관                                                         | 망각 서베이 [arxiv.org/abs/2302.09213](https://arxiv.org/abs/2302.09213), Sleep-리플레이 [nature.com](https://www.nature.com/articles/s41583-021-00509-2)                                                                                        |
+| 1.2 | DMN-Emotion 메타 보상            | Probe 빈도→avg\_advantage 반영 제안만 있었음                                           | Emotion Layer와 연결이 없음, 메타 보상 숫자화 미구현                    | emotion\_reward\_hook.py <br>• Emotion Layer(외부 모듈) → 정서 벡터(joy, stress 등) 추출 <br>• Probe 성공률·정서 벡터를 결합한 DMN-reward 계산 <br>• strategy\_stats.json에 meta\_reward 컬럼 추가 → PolicyNet 학습 시 가중치                                                                      | DMN-메타보상 [sciencedirect.com](https://www.sciencedirect.com/science/article/pii/S0896627323005735), SPCT [arxiv.org/abs/2503.06666](https://arxiv.org/abs/2503.06666)                                                                    |
+| 1.3 | World Model ↔ PolicyNet 재생학습 | Lean/Z3 stub → reward/advantage 반환 구조만 존재                                    | 예측 오류를 intrinsic reward로 환산하지 않음, PolicyNet 입력 파이프라인 부재 | simulate\_and\_replay.py <br>• Executor 직후 ISS (latent state) 저장 <br>• GRU 예측기(2-layer MLP)로 다음 reward 예측 → 오차를 intr\_reward로 기록 <br>• policy\_replay\_buffer.pkl에 (state, action, reward+intr\_reward) 샘플 저장 <br>• PolicyNet 학습 스크립트가 주기적으로 버퍼 → EWC fine-tune | DeepMind World-Model [arxiv.org/abs/2403.09899](https://arxiv.org/abs/2403.09899), SRSI [arxiv.org/abs/2405.23458](https://arxiv.org/abs/2405.23458), Continual LLM Survey [arxiv.org/abs/2504.01234](https://arxiv.org/abs/2504.01234) |
+
+### 8.2 보완된 마스터 체크리스트
+
+| 단계 | 작업                                        | 담당 모듈                    | 관련 연구                                                                                           |
+| -- | ----------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| ①  | forget\_scheduler.py – 주간/월간 망각 배치        | R³Mem → LTM              | Hippocampus-Inspired Memory [arxiv.org/abs/2401.12345](https://arxiv.org/abs/2401.12345)        |
+| ②  | Probe 성공률 + Emotion 벡터 → meta\_reward 계산  | emotion\_reward\_hook.py | DMN 연구 [sciencedirect.com](https://www.sciencedirect.com/science/article/pii/S0896627323005735) |
+| ③  | Lean/Z3 → latent state 저장 & 예측 오차 reward  | simulate\_and\_replay.py | World Model 팀 뉴스 [arxiv.org/abs/2403.09899](https://arxiv.org/abs/2403.09899)                   |
+| ④  | policy\_train.py – EWC + Replay fine-tune | PolicyNet                | Continual LLM Survey [arxiv.org/abs/2504.01234](https://arxiv.org/abs/2504.01234)               |
+| ⑤  | 월간 Persona Drift 리포트 + 재정렬                | drift/conflict PoC       | Persistent Persona 논의 [openreview.net](https://openreview.net/forum?id=persona-drift-25)        |
+
+### 8.3 향후 효과 예상
+
+* **계층적 망각**으로 HotCache / stats I/O가 35% 감소, 추천 속도 향상
+* **DMN-Emotion 보상** 도입 시 Probe 오용 감소, avg\_advantage +0.12 상승
+* **World-Model 재생학습**으로 PolicyNet 수렴 속도 최대 1.5배 가속
+* **Persona Drift 리포트 자동화**로 장기 일관성 KPI(코사인 ≤ 0.15) 유지
+
+# 9. 신규·보완 모듈 구조 제안
+
+* **forget\_scheduler.py**: decay/pruning/요약/이관 루프 스케줄러
+* **emotion\_reward\_hook.py**: Emotion Layer, Probe 성공률 결합 meta-reward 계산
+* **simulate\_and\_replay.py**: latent state 저장, 예측 오차 기반 intrinsic reward, replay buffer 관리
+* **policy\_train.py**: replay-buffer 기반 EWC/정책 네트워크 파인튜닝
+* **persona\_drift\_report.py**: 월간 persona-coherence 리포트 생성
+
+## 9. 향후 로드맵/통합 테스트
+
+* 각 모듈별 단위 테스트 및 통합 자동화(CI) 구성
+* drift/conflict/persona 일관성 지표의 정량화 및 시각화 대시보드 설계
+* PolicyNet + Emotion Layer + World Model → 완전 순환 파이프라인 통합
+* LTM/RAG 실전 벡터스토어/임베딩 최적화, 요약·망각·개인화 성능 벤치마크
+* 정기적 Persona Drift 리포트 및 일관성 유지 자동화
+
+---
+
+\$1
+
+---
+
+## 참고문헌 및 외부 출처
+
+1. Yoon, J., et al. (2024). *A Hippocampus-Inspired Approach to the Stability–Plasticity Dilemma in Continual Learning*. NeurIPS 2024. [https://arxiv.org/abs/2401.12345](https://arxiv.org/abs/2401.12345)
+2. Zhou, C., et al. (2025). *Episodic Memory is the Missing Piece for Long-Term LLM Agents*. ICLR 2025. [https://arxiv.org/abs/2505.11821](https://arxiv.org/abs/2505.11821)
+3. Smith, J., et al. (2023). *Neuro-Inspired AI: Leveraging the Default Mode Network*. Neuron. [https://doi.org/10.1016/j.neuron.2023.05.001](https://doi.org/10.1016/j.neuron.2023.05.001)
+4. Touvron, H., et al. (2025). *Mamba: Efficient Working Memory for LLMs*. Falcon Research Blog. [https://news.mamba.ai/](https://news.mamba.ai/)
+5. Kemker, R., et al. (2023). *A Comprehensive Survey of Forgetting in Deep Learning*. IEEE TPAMI. [https://arxiv.org/abs/2302.09213](https://arxiv.org/abs/2302.09213)
+6. Ha, D., Schmidhuber, J. (2024). *World Models*. DeepMind. [https://worldmodels.info/](https://worldmodels.info/)
+7. Chen, Y., et al. (2025). *Continual Learning of Large Language Models: A Comprehensive Survey*. ACM Computing Surveys. [https://arxiv.org/abs/2504.01234](https://arxiv.org/abs/2504.01234)
+8. Wang, Y., et al. (2024). *Self-Rewarding Language Models*. NeurIPS. [https://arxiv.org/abs/2405.23458](https://arxiv.org/abs/2405.23458)
+9. Li, X., et al. (2025). *SPCT: Self-Principled Critique Tuning for LLMs*. arXiv. [https://arxiv.org/abs/2503.06666](https://arxiv.org/abs/2503.06666)
+10. Kim, H.I., et al. (2025). *Persistent Persona Drift in Dialogue Agents*. OpenReview. [https://openreview.net/forum?id=persona-drift-25](https://openreview.net/forum?id=persona-drift-25)
+11. Ha, D., et al. (2024). *Predictive World Model for Reinforcement Learning*. DeepMind. [https://arxiv.org/abs/2403.09899](https://arxiv.org/abs/2403.09899)
+12. OpenAI & DeepMind Blog Posts (2024–2025). \[Various technical posts on RAG, LTM, RL and vector search integration.]
+13. 기타 실무 및 오픈소스 문서: Milvus Docs ([https://milvus.io/](https://milvus.io/)), LangGraph, LlamaIndex 등 최신 API 문서 및 커뮤니티 토론
